@@ -1,4 +1,5 @@
-import { Item, Location, LocationType, Role, User, InventoryRecord, Requisition, RequestStatus, DailyPerformance, AttendanceStatus } from './types';
+
+import { Item, Location, LocationType, Role, User, InventoryRecord, Requisition, RequestStatus, DailyPerformance, AttendanceStatus, ItemType, ItemCondition, RolePermissions, AppPermission } from './types';
 
 export const LOCATIONS: Location[] = [
   { id: 'loc-central', name: 'Almoxarifado Central (Maputo HQ)', type: LocationType.CENTRAL, parentId: null },
@@ -14,28 +15,55 @@ export const LOCATIONS: Location[] = [
   { id: 'loc-field-echo', name: 'Equipe Madeira (Manica)', type: LocationType.FIELD, parentId: 'loc-manica' },
 ];
 
+// Standard Rates based on prompt
+const RATE_DAY = 236.5;
+const RATE_HALF = 118;
+const RATE_ABSENCE_PENALTY = 95;
+const RATE_BONUS = 10;
+
 export const USERS: User[] = [
   { id: 'u-admin', name: 'Carlos Admin', role: Role.ADMIN, locationId: 'loc-central', jobTitle: 'Diretor de Operações' },
+  { id: 'u-gm', name: 'Roberto (Diretor Geral)', role: Role.GENERAL_MANAGER, locationId: 'loc-central', jobTitle: 'CEO' },
   { id: 'u-manager-nam', name: 'Joana (Gestora Nampula)', role: Role.MANAGER, locationId: 'loc-nampula', jobTitle: 'Gerente Regional' },
   { id: 'u-manager-bei', name: 'Pedro (Gestor Beira)', role: Role.MANAGER, locationId: 'loc-beira', jobTitle: 'Gerente Regional' },
   { id: 'u-manager-tete', name: 'Miguel (Gestor Tete)', role: Role.MANAGER, locationId: 'loc-tete', jobTitle: 'Gerente de Minas' },
   { id: 'u-manager-zam', name: 'Sofia (Gestora Zambézia)', role: Role.MANAGER, locationId: 'loc-zambezia', jobTitle: 'Gerente Agrícola' },
   { id: 'u-manager-man', name: 'André (Gestor Manica)', role: Role.MANAGER, locationId: 'loc-manica', jobTitle: 'Gerente Florestal' },
-  { id: 'u-worker-1', name: 'Mateus (Operário Alpha)', role: Role.WORKER, locationId: 'loc-field-alpha', defaultDailyGoal: 20, jobTitle: 'Motosserrista' },
-  { id: 'u-worker-2', name: 'Lucas (Operário Alpha)', role: Role.WORKER, locationId: 'loc-field-alpha', defaultDailyGoal: 20, jobTitle: 'Ajudante' },
-  { id: 'u-worker-3', name: 'Ana (Operário Bravo)', role: Role.WORKER, locationId: 'loc-field-bravo', defaultDailyGoal: 15, jobTitle: 'Técnica de Campo' },
-  { id: 'u-worker-4', name: 'Paulo (Operário Tete)', role: Role.WORKER, locationId: 'loc-field-charlie', defaultDailyGoal: 30, jobTitle: 'Operador de Máquina' },
-  { id: 'u-worker-5', name: 'Ricardo (Operário Zambézia)', role: Role.WORKER, locationId: 'loc-field-delta', defaultDailyGoal: 25, jobTitle: 'Colhedor' },
-  { id: 'u-worker-6', name: 'Beatriz (Operário Manica)', role: Role.WORKER, locationId: 'loc-field-echo', defaultDailyGoal: 18, jobTitle: 'Fiscal Florestal' },
+
+  // Field Workers with new Salary Structure
+  {
+    id: 'u-worker-1', name: 'Adelino Ernesto', role: Role.WORKER, locationId: 'loc-field-alpha', jobTitle: 'Cortador',
+    defaultDailyGoal: 12, dailyRate: RATE_DAY, halfDayRate: RATE_HALF, absencePenalty: RATE_ABSENCE_PENALTY, bonusPerUnit: RATE_BONUS
+  },
+  {
+    id: 'u-worker-2', name: 'Augusto João', role: Role.WORKER, locationId: 'loc-field-alpha', jobTitle: 'Ajudante',
+    defaultDailyGoal: 8, dailyRate: RATE_DAY, halfDayRate: RATE_HALF, absencePenalty: RATE_ABSENCE_PENALTY, bonusPerUnit: RATE_BONUS
+  },
+  {
+    id: 'u-worker-3', name: 'Ana (Operário Bravo)', role: Role.WORKER, locationId: 'loc-field-bravo', jobTitle: 'Técnica de Campo',
+    defaultDailyGoal: 10, dailyRate: 300, halfDayRate: 150, absencePenalty: 100, bonusPerUnit: 15
+  },
+  {
+    id: 'u-worker-4', name: 'Paulo (Operário Tete)', role: Role.WORKER, locationId: 'loc-field-charlie', jobTitle: 'Operador de Máquina',
+    defaultDailyGoal: 20, dailyRate: 400, halfDayRate: 200, absencePenalty: 150, bonusPerUnit: 5
+  },
+  {
+    id: 'u-worker-5', name: 'Ricardo (Operário Zambézia)', role: Role.WORKER, locationId: 'loc-field-delta', jobTitle: 'Colhedor',
+    defaultDailyGoal: 15, dailyRate: RATE_DAY, halfDayRate: RATE_HALF, absencePenalty: RATE_ABSENCE_PENALTY, bonusPerUnit: RATE_BONUS
+  },
+  {
+    id: 'u-worker-6', name: 'Beatriz (Operário Manica)', role: Role.WORKER, locationId: 'loc-field-echo', jobTitle: 'Fiscal Florestal',
+    defaultDailyGoal: 10, dailyRate: 250, halfDayRate: 125, absencePenalty: 100, bonusPerUnit: 12
+  },
 ];
 
 export const ITEMS: Item[] = [
-  { id: 'it-chainsaw', name: 'Motosserra Stihl MS 382', sku: 'EQ-001', category: 'Equipamento' },
-  { id: 'it-helmet', name: 'Capacete de Segurança', sku: 'PPE-005', category: 'EPI' },
-  { id: 'it-gloves', name: 'Luvas de Couro', sku: 'PPE-012', category: 'EPI' },
-  { id: 'it-gps', name: 'GPS Garmin eTrex', sku: 'TEC-003', category: 'Tecnologia' },
-  { id: 'it-boots', name: 'Botas de Segurança', sku: 'PPE-020', category: 'EPI' },
-  { id: 'it-drone', name: 'Drone Mapeamento', sku: 'TEC-010', category: 'Tecnologia' },
+  { id: 'it-chainsaw', name: 'Motosserra Stihl MS 382', sku: 'EQ-001', category: 'Equipamento', type: ItemType.ASSET, unit: 'Unidade', price: 25000 },
+  { id: 'it-helmet', name: 'Capacete de Segurança', sku: 'PPE-005', category: 'EPI', type: ItemType.CONSUMABLE, unit: 'Unidade', price: 450 },
+  { id: 'it-gloves', name: 'Luvas de Couro', sku: 'PPE-012', category: 'EPI', type: ItemType.CONSUMABLE, unit: 'Par', price: 120 },
+  { id: 'it-gps', name: 'GPS Garmin eTrex', sku: 'TEC-003', category: 'Tecnologia', type: ItemType.ASSET, unit: 'Unidade', price: 15000 },
+  { id: 'it-boots', name: 'Botas de Segurança', sku: 'PPE-020', category: 'EPI', type: ItemType.CONSUMABLE, unit: 'Par', price: 1800 },
+  { id: 'it-drone', name: 'Drone Mapeamento', sku: 'TEC-010', category: 'Tecnologia', type: ItemType.ASSET, unit: 'Unidade', price: 85000 },
 ];
 
 export const INITIAL_INVENTORY: InventoryRecord[] = [
@@ -65,6 +93,7 @@ export const INITIAL_REQUISITIONS: Requisition[] = [
     itemId: 'it-chainsaw',
     quantity: 5,
     status: RequestStatus.PENDING,
+    condition: ItemCondition.NEW,
     createdAt: new Date(Date.now() - 86400000).toISOString(), // Yesterday
     updatedAt: new Date(Date.now() - 86400000).toISOString(),
     logs: [
@@ -72,7 +101,7 @@ export const INITIAL_REQUISITIONS: Requisition[] = [
         timestamp: new Date(Date.now() - 86400000).toISOString(),
         actorId: 'u-manager-nam',
         action: 'CREATE',
-        message: 'Solicitação inicial de 5 motosserras.'
+        message: 'Solicitação inicial de 5 motosserras. Preferência por equipamentos novos.'
       }
     ]
   },
@@ -84,13 +113,27 @@ export const INITIAL_REQUISITIONS: Requisition[] = [
     itemId: 'it-boots',
     quantity: 20,
     status: RequestStatus.APPROVED,
+    condition: ItemCondition.NEW,
     createdAt: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
     updatedAt: new Date(Date.now() - 86400000).toISOString(),
-    logs: []
+    logs: [
+      {
+        timestamp: new Date(Date.now() - 172800000).toISOString(),
+        actorId: 'u-manager-tete',
+        action: 'CREATE',
+        message: 'Botas para nova equipe.'
+      },
+      {
+        timestamp: new Date(Date.now() - 86400000).toISOString(),
+        actorId: 'u-admin',
+        action: 'APPROVE',
+        message: 'Aprovado. Preparando para envio.'
+      }
+    ]
   }
 ];
 
-// Mock data: Yesterday's performance
+// Mock data: Yesterday's performance (using new logic)
 const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
 export const INITIAL_PERFORMANCE: DailyPerformance[] = [
@@ -98,33 +141,69 @@ export const INITIAL_PERFORMANCE: DailyPerformance[] = [
     id: 'perf-001',
     workerId: 'u-worker-1',
     date: yesterday,
-    status: AttendanceStatus.PRESENT,
-    hoursWorked: 8,
-    goalTarget: 20,
-    goalAchieved: 22,
-    score: 100, // Worked full time, exceeded goal. Max 100.
+    status: AttendanceStatus.FULL_DAY, // D
+    production: 15, // Goal 12, Surplus 3
     notes: 'Excelente produtividade.'
   },
   {
     id: 'perf-002',
     workerId: 'u-worker-2',
     date: yesterday,
-    status: AttendanceStatus.PARTIAL,
-    hoursWorked: 4, // 50% time
-    goalTarget: 20,
-    goalAchieved: 10, // 50% goal
-    score: 50, // Min(50%, 50%) = 50
+    status: AttendanceStatus.HALF_DAY, // D/2
+    production: 4, // Goal 8 (adjusted),
     notes: 'Saiu mais cedo para consulta.'
   },
   {
     id: 'perf-003',
     workerId: 'u-worker-4',
     date: yesterday,
-    status: AttendanceStatus.PRESENT,
-    hoursWorked: 9, 
-    goalTarget: 30,
-    goalAchieved: 35,
-    score: 100,
+    status: AttendanceStatus.FULL_DAY,
+    production: 22, // Goal 20
     notes: 'Operação em Tete normal.'
   }
 ];
+
+// --- PERMISSION CONSTANTS ---
+
+export const AVAILABLE_PERMISSIONS: { id: AppPermission; label: string; category: string }[] = [
+  { id: 'VIEW_DASHBOARD', label: 'Visualizar Dashboard', category: 'Geral' },
+  { id: 'VIEW_REPORTS', label: 'Relatórios Diários e Executivos', category: 'Geral' },
+  { id: 'VIEW_REQUISITIONS', label: 'Visualizar Requisições', category: 'Logística' },
+  { id: 'MANAGE_REQUISITIONS', label: 'Aprovar/Rejeitar Requisições', category: 'Logística' },
+  { id: 'VIEW_INVENTORY', label: 'Visualizar Estoque', category: 'Logística' },
+  { id: 'MANAGE_INVENTORY', label: 'Adicionar/Criar Estoque', category: 'Logística' },
+  { id: 'VIEW_PERFORMANCE', label: 'Visualizar Desempenho', category: 'RH Operacional' },
+  { id: 'MANAGE_PERFORMANCE', label: 'Lançar Produção/Presença', category: 'RH Operacional' },
+  { id: 'VIEW_POS', label: 'Acessar Ponto de Venda', category: 'Vendas & Finanças' },
+  { id: 'MANAGE_POS', label: 'Realizar Vendas/Despesas', category: 'Vendas & Finanças' },
+  { id: 'VIEW_INVOICES', label: 'Visualizar Documentos/Faturas', category: 'Vendas & Finanças' }, // NEW
+  { id: 'MANAGE_INVOICES', label: 'Emitir/Gerenciar Faturas', category: 'Vendas & Finanças' }, // NEW
+  { id: 'VIEW_PATRIMONY', label: 'Visualizar Patrimônio/Contabilidade', category: 'Gestão' },
+  { id: 'VIEW_HR', label: 'Visualizar Módulo RH', category: 'Gestão' },
+  { id: 'MANAGE_HR', label: 'Gerenciar Funcionários (Criar/Editar)', category: 'Gestão' },
+  { id: 'VIEW_PAYROLL', label: 'Visualizar Folha Salarial', category: 'Gestão' },
+  { id: 'MANAGE_PAYROLL', label: 'Processar Folha Salarial', category: 'Gestão' },
+  { id: 'VIEW_SETTINGS', label: 'Acessar Definições', category: 'Sistema' },
+  { id: 'MANAGE_SETTINGS', label: 'Gerenciar Configurações (Locais/Itens)', category: 'Sistema' },
+  { id: 'MANAGE_USERS', label: 'Gerenciar Usuários', category: 'Sistema' },
+  { id: 'MANAGE_PERMISSIONS', label: 'Gerenciar Permissões', category: 'Sistema' },
+];
+
+export const DEFAULT_ROLE_PERMISSIONS: RolePermissions = {
+  [Role.ADMIN]: [
+    'VIEW_DASHBOARD', 'VIEW_REPORTS', 'VIEW_REQUISITIONS', 'MANAGE_REQUISITIONS', 'VIEW_INVENTORY', 'MANAGE_INVENTORY',
+    'VIEW_PERFORMANCE', 'MANAGE_PERFORMANCE', 'VIEW_POS', 'MANAGE_POS', 'VIEW_INVOICES', 'MANAGE_INVOICES', 'VIEW_PATRIMONY',
+    'VIEW_HR', 'MANAGE_HR', 'VIEW_PAYROLL', 'MANAGE_PAYROLL', 'VIEW_SETTINGS', 'MANAGE_SETTINGS', 'MANAGE_USERS', 'MANAGE_PERMISSIONS'
+  ],
+  [Role.GENERAL_MANAGER]: [
+    'VIEW_DASHBOARD', 'VIEW_REPORTS', 'VIEW_REQUISITIONS', 'MANAGE_REQUISITIONS', 'VIEW_INVENTORY', 'MANAGE_INVENTORY',
+    'VIEW_PERFORMANCE', 'VIEW_POS', 'VIEW_INVOICES', 'MANAGE_INVOICES', 'VIEW_PATRIMONY', 'VIEW_HR', 'MANAGE_HR', 'VIEW_PAYROLL', 'VIEW_SETTINGS', 'MANAGE_SETTINGS', 'MANAGE_USERS'
+  ],
+  [Role.MANAGER]: [
+    'VIEW_DASHBOARD', 'VIEW_REQUISITIONS', 'VIEW_INVENTORY', 'MANAGE_INVENTORY',
+    'VIEW_PERFORMANCE', 'MANAGE_PERFORMANCE', 'VIEW_POS', 'MANAGE_POS', 'VIEW_INVOICES', 'MANAGE_INVOICES'
+  ],
+  [Role.WORKER]: [
+    'VIEW_DASHBOARD', 'VIEW_INVENTORY', 'VIEW_REQUISITIONS'
+  ]
+};
