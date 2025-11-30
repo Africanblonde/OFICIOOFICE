@@ -766,9 +766,57 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     return allUsers.filter(u => u.role === Role.WORKER && relevantLocationIds.includes(u.locationId));
   };
 
-  const addNewUser = (user: User) => {
-    setAllUsers(prev => [...prev, user]);
-    showNotification(`Funcionário ${user.name} cadastrado.`);
+  const addNewUser = async (user: User, email: string, password: string) => {
+    try {
+      // Chamar Edge Function para criar usuário
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            email,
+            password,
+            userData: {
+              name: user.name,
+              role: user.role,
+              locationId: user.locationId,
+              jobTitle: user.jobTitle,
+              defaultDailyGoal: user.defaultDailyGoal,
+              dailyRate: user.dailyRate,
+              halfDayRate: user.halfDayRate,
+              absencePenalty: user.absencePenalty,
+              bonusPerUnit: user.bonusPerUnit
+            }
+          })
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao criar usuário');
+      }
+
+      // Atualizar estado local com o usuário criado
+      const completeUser: User = {
+        ...user,
+        id: result.userId
+      };
+
+      setAllUsers(prev => [...prev, completeUser]);
+      showNotification(`✅ Funcionário ${user.name} cadastrado com sucesso!`);
+      showNotification(`📧 Login: ${email} | Senha: ${password}`);
+
+    } catch (err: any) {
+      console.error('Erro ao criar usuário:', err);
+      showNotification(`❌ Erro ao criar usuário: ${err.message}`);
+    }
   };
 
   const updateUser = (updatedUser: User) => {
