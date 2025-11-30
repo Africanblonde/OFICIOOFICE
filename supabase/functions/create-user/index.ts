@@ -56,33 +56,6 @@ serve(async (req) => {
 
         if (authError) {
             console.error('Auth error:', authError)
-            return new Response(
-                JSON.stringify({ error: `Erro ao criar usuário: ${authError.message}` }),
-                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
-        }
-
-        // 2. Criar perfil em public.users
-        const { error: profileError } = await supabaseAdmin
-            .from('users')
-            .insert({
-                id: authData.user.id,
-                name: userData.name,
-                role: userData.role,
-                location_id: userData.locationId,
-                job_title: userData.jobTitle,
-                default_daily_goal: userData.defaultDailyGoal,
-                daily_rate: userData.dailyRate,
-                half_day_rate: userData.halfDayRate,
-                absence_penalty: userData.absencePenalty,
-                bonus_per_unit: userData.bonusPerUnit
-            })
-
-        if (profileError) {
-            console.error('Profile error:', profileError)
-
-            // Se falhou ao criar perfil, deletar usuário do auth para manter consistência
-            await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
 
             return new Response(
                 JSON.stringify({ error: `Erro ao criar perfil: ${profileError.message}` }),
