@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 export const POS = () => {
-  const { items, inventory, currentUser, processSale, registerExpense, transactions, invoices, addInvoice, updateInvoice, getNextInvoiceNumber, hasPermission, locations, clients, addClient, updateClient, getClientBalance } = useLogistics();
+  const { items, inventory, currentUser, processSale, registerExpense, transactions, invoices, addInvoice, updateInvoice, getNextInvoiceNumber, hasPermission, locations, clients, addClient, updateClient, getClientBalance, companyInfo } = useLogistics();
   const [activeTab, setActiveTab] = useState<'terminal' | 'expenses' | 'invoices' | 'history' | 'clients'>('terminal');
 
   // POS State
@@ -833,12 +833,7 @@ export const POS = () => {
           onSave={handleSaveInvoice}
           initial={editingInvoice}
           companyDefaults={{
-              empresa: {
-                  nome: "OFFICE FLORESTAL OLC",
-                  nuit: "400123456",
-                  endereco: currentLocation?.name || "Sede Central, Maputo",
-                  contacto: "+258 84 123 4567"
-              },
+              empresa: companyInfo,
               moeda: "MZN",
               gerarNumero: getNextInvoiceNumber,
               locationId: currentUser.locationId,

@@ -357,6 +357,7 @@ export const HumanResources = () => {
                             >
                                 <option value={Role.WORKER}>Operário</option>
                                 <option value={Role.MANAGER}>Gerente</option>
+                                <option value={Role.GENERAL_MANAGER}>Diretor Geral</option>
                                 <option value={Role.ADMIN}>Admin</option>
                             </select>
                         </div>
@@ -513,6 +514,7 @@ export const HumanResources = () => {
                             >
                                 <option value={Role.WORKER}>Operário (Campo)</option>
                                 <option value={Role.MANAGER}>Gerente Regional</option>
+                                <option value={Role.GENERAL_MANAGER}>Diretor Geral</option>
                                 <option value={Role.ADMIN}>Administrador</option>
                             </select>
                         </div>
@@ -553,7 +555,11 @@ export const HumanResources = () => {
                                 onChange={e => setFormData({ ...formData, locationId: e.target.value })}
                             >
                                 <option value="">Selecione...</option>
-                                {locations.map(loc => (
+                                {locations.filter((loc, index, self) =>
+                                    index === self.findIndex((l) => (
+                                        l.id === loc.id
+                                    ))
+                                ).map(loc => (
                                     <option key={loc.id} value={loc.id}>{loc.name}</option>
                                 ))}
                             </select>

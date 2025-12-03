@@ -54,9 +54,10 @@ interface LogisticsContextType {
   refreshData: () => void;
   registerNewItem: (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number) => void;
   addToInventory: (itemId: string, locationId: string, qty: number, unitPrice: number) => void;
-  addNewUser: (user: User) => void;
+  addNewUser: (user: User, email: string, password: string) => void;
   updateUser: (updatedUser: User) => void;
   addLocation: (name: string, type: LocationType, parentId: string | null) => void;
+  removeLocation: (locationId: string) => void;
   addCategory: (category: string) => void;
   addMeasureUnit: (unit: string) => void;
   addItemType: (name: string, behavior: ItemType) => void;
@@ -819,9 +820,38 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   };
 
-  const updateUser = (updatedUser: User) => {
-    setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    showNotification("Dados do funcionário atualizados com sucesso.");
+  const updateUser = async (updatedUser: User) => {
+    try {
+      // 1. Update in Supabase
+      const { error } = await supabase.from('users').update({
+        name: updatedUser.name,
+        role: updatedUser.role,
+        location_id: updatedUser.locationId,
+        job_title: updatedUser.jobTitle,
+        default_daily_goal: updatedUser.defaultDailyGoal,
+        daily_rate: updatedUser.dailyRate,
+        half_day_rate: updatedUser.halfDayRate,
+        absence_penalty: updatedUser.absencePenalty,
+        bonus_per_unit: updatedUser.bonusPerUnit
+      }).eq('id', updatedUser.id);
+
+      if (error) {
+        throw error;
+      }
+
+      // 2. Update local state
+      setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+
+      // Also update currentUser if it's the same person
+      if (currentUser && currentUser.id === updatedUser.id) {
+        setCurrentUser(updatedUser);
+      }
+
+      showNotification("Dados do funcionário atualizados com sucesso.");
+    } catch (err: any) {
+      console.error('Erro ao atualizar usuário:', err);
+      showNotification(`Erro ao atualizar: ${err.message}`);
+    }
   };
 
   const addLocation = async (name: string, type: LocationType, parentId: string | null) => {
@@ -846,6 +876,25 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     setLocations([...locations, mappedLocation]);
     showNotification("Nova localização adicionada.");
+  };
+
+  const removeLocation = async (locationId: string) => {
+    // Check if any users are assigned to this location
+    const isLocationInUse = allUsers.some(user => user.locationId === locationId);
+    if (isLocationInUse) {
+      showNotification("Não é possível remover. Existem usuários alocados para esta localização.");
+      return;
+    }
+
+    const { error } = await supabase.from('locations').delete().match({ id: locationId });
+
+    if (error) {
+      showNotification(`Erro ao remover localização: ${error.message}`);
+      return;
+    }
+
+    setLocations(prev => prev.filter(loc => loc.id !== locationId));
+    showNotification("Localização removida com sucesso.");
   };
 
   const addCategory = (cat: string) => setCategories([...categories, cat]);
@@ -1518,7 +1567,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Add new user (admin only)
-  const addUser = async (user: { name: string; email: string; password?: string; role: Role; locationId?: string }) => {
+  const addUser = async (user: { name: string; email: string; password?: string; role: Role; locationId?: string; jobTitle?: string; defaultDailyGoal?: number; dailyRate?: number; halfDayRate?: number; absencePenalty?: number; bonusPerUnit?: number; }) => {
     if (!currentUser) return;
     if (!isAdminOrGM) {
       showNotification('Apenas administradores podem criar usuários.');
@@ -1531,32 +1580,59 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         return;
       }
 
-      // Call register_user RPC with correct parameter order: email, password, name, role, location_id
-      const { data, error } = await supabase.rpc('register_user', {
-        p_email: user.email,
-        p_password: user.password,
-        p_name: user.name,
-        p_role: user.role,
-        p_location_id: user.locationId || null
-      });
+      const { data: { session } } = await supabase.auth.getSession();
 
-      if (error) {
-        console.error('RPC Error:', error);
-        showNotification('Erro ao criar usuário: ' + (error.message || error.details || 'Erro desconhecido'));
-        return;
-      }
-
-      if (data) {
-        const response = data as any;
-        if (response.success) {
-          // Refresh users
-          const { data: usersData } = await supabase.from('users').select('*');
-          if (usersData) setAllUsers(usersData);
-          showNotification(`Usuário ${user.name} criado com sucesso.`);
-        } else {
-          showNotification('Erro: ' + (response.message || response.error || 'Erro desconhecido'));
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            email: user.email,
+            password: user.password,
+            userData: {
+              name: user.name,
+              role: user.role,
+              locationId: user.locationId,
+              jobTitle: user.jobTitle,
+              defaultDailyGoal: user.defaultDailyGoal,
+              dailyRate: user.dailyRate,
+              halfDayRate: user.halfDayRate,
+              absencePenalty: user.absencePenalty,
+              bonusPerUnit: user.bonusPerUnit
+            }
+          })
         }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao criar usuário');
       }
+
+      // Refresh users
+      const { data: usersData } = await supabase.from('users').select('*');
+      if (usersData) {
+        const mappedUsers = usersData.map((u: any) => ({
+          id: u.id,
+          name: u.name,
+          role: u.role,
+          locationId: u.location_id || '',
+          jobTitle: u.job_title,
+          defaultDailyGoal: u.default_daily_goal,
+          dailyRate: u.daily_rate,
+          halfDayRate: u.half_day_rate,
+          absencePenalty: u.absence_penalty,
+          bonusPerUnit: u.bonus_per_unit
+        }));
+        setAllUsers(mappedUsers);
+      }
+      showNotification(`Usuário ${user.name} criado com sucesso.`);
+
     } catch (error) {
       console.error('Exception:', error);
       showNotification('Erro ao criar usuário: ' + (error as Error).message);
@@ -1587,7 +1663,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       setSelectedDepartmentId, createRequisition, updateRequisitionStatus,
       getInventoryByLocation, getItemName, getLocationName, savePerformanceRecord, getWorkersByManager,
       getWorkersByLocation, refreshData, registerNewItem, addToInventory,
-      addNewUser, updateUser, addLocation, addCategory, addMeasureUnit, addItemType,
+      addNewUser, updateUser, addLocation, removeLocation, addCategory, addMeasureUnit, addItemType,
       addPaymentMethod, removePaymentMethod, addExpenseCategory, removeExpenseCategory, updateCompanyInfo, setDefaultCurrency,
       processSale, registerExpense, hasPermission, togglePermission,
       addInvoice, updateInvoice, deleteInvoice, getNextInvoiceNumber, registerPayment,
