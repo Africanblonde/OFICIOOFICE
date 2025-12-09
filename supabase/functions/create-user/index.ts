@@ -7,38 +7,31 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-    console.log('--- Create User Function Invoked ---');
+    console.log('--- Create User Function Invoked (v4 Safe) ---');
+
     // Handle CORS preflight requests
     if (req.method === 'OPTIONS') {
-        console.log('Responding to OPTIONS preflight.');
         return new Response('ok', { headers: corsHeaders });
     }
 
     try {
-        console.log('Request received, method:', req.method);
-        // Verificar se é POST
         if (req.method !== 'POST') {
-            console.error('Error: Method not allowed.');
             return new Response(
                 JSON.stringify({ error: 'Method not allowed' }),
                 { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
         }
 
-        console.log('Parsing request body...');
-        const { email, password, userData } = await req.json();
-        console.log('Request body parsed:', { email, userData });
+        const body = await req.json();
+        const { email, password, userData } = body;
 
-        // Validar dados recebidos
         if (!email || !password || !userData) {
-            console.error('Error: Missing required fields.');
             return new Response(
-                JSON.stringify({ error: 'Missing required fields: email, password, userData' }),
+                JSON.stringify({ error: 'Missing required fields' }),
                 { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
         }
 
-        console.log('Creating Supabase admin client...');
         const supabaseAdmin = createClient(
             Deno.env.get('SUPABASE_URL') ?? '',
             Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -49,11 +42,10 @@ serve(async (req) => {
                 }
             }
         );
-        console.log('Supabase admin client created.');
 
-        // 1. Criar usuário no Supabase Auth
-        console.log('Creating user in Supabase Auth...');
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        // 1. Create Auth User
+        console.log('Creating Auth User:', email);
+        const authResponse = await supabaseAdmin.auth.admin.createUser({
             email,
             password,
             email_confirm: true,
@@ -63,19 +55,20 @@ serve(async (req) => {
             }
         });
 
-        if (authError) {
-            console.error('Auth user creation error:', authError);
+        if (authResponse.error) {
+            console.error('Auth Error:', authResponse.error);
             return new Response(
-                JSON.stringify({ error: `Erro ao criar usuário no Auth: ${authError.message}` }),
+                JSON.stringify({ error: `Auth Error: ${authResponse.error.message}` }),
                 { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
         }
-        console.log('Auth user created successfully:', authData.user.id);
 
-        // 2. Criar perfil no public.users
-        console.log('Inserting user profile into public.users...');
+        const userId = authResponse.data.user.id;
+        console.log('Auth User Created:', userId);
+
+        // 2. Upsert Profile
         const profilePayload = {
-            id: authData.user.id,
+            id: userId,
             name: userData.name,
             role: userData.role,
             location_id: userData.locationId ?? null,
@@ -86,42 +79,38 @@ serve(async (req) => {
             absence_penalty: userData.absencePenalty ?? null,
             bonus_per_unit: userData.bonusPerUnit ?? null
         };
-        console.log('Profile payload:', profilePayload);
 
-        const { error: profileError } = await supabaseAdmin
+        console.log('Upserting Profile:', profilePayload);
+        const profileResponse = await supabaseAdmin
             .from('users')
             .upsert(profilePayload);
 
-        if (profileError) {
-            console.error('Profile insertion error:', profileError);
-            // If profile creation fails, we might want to delete the auth user, 
-            // but since we are upserting, it might just be a data error.
-            // For safety, if it's a new user flow, we can still try to clean up if it was a critical failure.
-            // But with upsert, we are safer.
+        if (profileResponse.error) {
+            const errorMsg = profileResponse.error?.message || JSON.stringify(profileResponse.error) || 'Unknown profile error';
+            console.error('Profile Error:', profileResponse.error);
+            // Note: We are NOT deleting the auth user here to avoid complex rollback logic.
+            // The upsert ensures we can retry safely.
             return new Response(
-                JSON.stringify({ error: `Erro ao criar/atualizar perfil do usuário: ${profileError.message}` }),
+                JSON.stringify({ error: `Profile Error: ${errorMsg}` }),
                 { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
         }
-        console.log('User profile inserted successfully.');
 
-        // Sucesso!
-        console.log('--- Create User Function Success ---');
+        console.log('Success!');
         return new Response(
             JSON.stringify({
                 success: true,
-                userId: authData.user.id,
+                userId: userId,
                 email: email,
                 message: 'Usuário criado com sucesso!'
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
 
-    } catch (error) {
-        console.error('--- Create User Function CRASH ---');
-        console.error('Unexpected error:', error);
+    } catch (error: any) {
+        console.error('CRITICAL ERROR:', error);
         return new Response(
-            JSON.stringify({ error: error.message || 'Erro interno do servidor' }),
+            JSON.stringify({ error: error.message || 'Erro interno desconhecido' }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }

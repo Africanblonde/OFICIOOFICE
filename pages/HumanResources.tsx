@@ -1,19 +1,21 @@
 import React, { useState } from 'react';
-import { useLogistics } from '../context/LogisticsContext';
-import { Role, User, AttendanceStatus } from '../types';
+import { useLogistics } from '../context/useLogistics';
+import { Role, User, AttendanceStatus, DailyPerformance } from '../types';
 import {
     UserPlus, Users, Briefcase, MapPin, Search, X,
     Calendar, DollarSign, TrendingUp, Clock, Settings, FileText,
-    ChevronRight, User as UserIcon, CheckCircle, AlertTriangle, Save, Lock
+    ChevronRight, User as UserIcon, CheckCircle, AlertTriangle, Save, Lock, Trash2
 } from 'lucide-react';
 
 export const HumanResources = () => {
-    const { allUsers, locations, addNewUser, updateUser, performanceRecords, payrollParams, updatePayrollParams, isAdminOrGM } = useLogistics();
+    const { allUsers, locations, addUser, updateUser, deleteUser, performanceRecords, payrollParams, updatePayrollParams, isAdminOrGM } = useLogistics();
     const [searchTerm, setSearchTerm] = useState('');
 
     // Modal State
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [activeModalTab, setActiveModalTab] = useState<'summary' | 'history' | 'daily' | 'financial' | 'settings'>('summary');
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
     // New User Form State
     const [formData, setFormData] = useState({
@@ -21,7 +23,7 @@ export const HumanResources = () => {
         email: '',
         password: '',
         role: Role.WORKER,
-        locationId: '',
+        locationId: null as string | null,
         jobTitle: '',
         defaultDailyGoal: 10,
         dailyRate: 236.5,
@@ -33,7 +35,7 @@ export const HumanResources = () => {
     // Settings Form State (Inside Modal)
     const [settingsData, setSettingsData] = useState<Partial<User>>({});
 
-    const filteredUsers = allUsers.filter(u =>
+    const filteredUsers = allUsers.filter((u: User) =>
         u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -45,11 +47,11 @@ export const HumanResources = () => {
             return;
         }
 
-        const newUser: User = {
-            id: '', // Será preenchido pela Edge Function
+        const newUser = {
             name: formData.name,
+            email: formData.email,
             role: formData.role,
-            locationId: formData.locationId,
+            locationId: formData.locationId || undefined,
             jobTitle: formData.jobTitle,
             defaultDailyGoal: formData.role === Role.WORKER ? formData.defaultDailyGoal : undefined,
             dailyRate: formData.role === Role.WORKER ? formData.dailyRate : undefined,
@@ -58,7 +60,7 @@ export const HumanResources = () => {
             bonusPerUnit: formData.role === Role.WORKER ? formData.bonusPerUnit : undefined,
         };
 
-        await addNewUser(newUser, formData.email, formData.password);
+        await addUser(newUser);
 
         // Reset
         setFormData({
@@ -66,7 +68,7 @@ export const HumanResources = () => {
             email: '',
             password: '',
             role: Role.WORKER,
-            locationId: '',
+            locationId: null,
             jobTitle: '',
             defaultDailyGoal: 10,
             dailyRate: 236.5,
@@ -100,6 +102,19 @@ export const HumanResources = () => {
         }
     };
 
+    const handleDeleteUser = (user: User) => {
+        setUserToDelete(user);
+        setIsDeleteModalOpen(true);
+    };
+
+    const confirmDeleteUser = async () => {
+        if (!userToDelete) return;
+        await deleteUser(userToDelete.id);
+        setIsDeleteModalOpen(false);
+        setUserToDelete(null);
+        setSelectedUser(null); // Close the modal
+    };
+
     // --- MODAL COMPONENTS ---
 
     const renderModalContent = () => {
@@ -107,14 +122,14 @@ export const HumanResources = () => {
         const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
 
         // Filter records for this user
-        const userRecords = performanceRecords.filter(r => r.workerId === selectedUser.id);
+        const userRecords = performanceRecords.filter((r: DailyPerformance) => r.workerId === selectedUser.id);
         const currentMonthRecords = userRecords.filter(r => r.date.startsWith(currentMonth));
 
         // Stats Calculation
         const fullDays = currentMonthRecords.filter(r => r.status === AttendanceStatus.FULL_DAY).length;
         const halfDays = currentMonthRecords.filter(r => r.status === AttendanceStatus.HALF_DAY).length;
         const absences = currentMonthRecords.filter(r => r.status === AttendanceStatus.ABSENT).length;
-        const realProduction = currentMonthRecords.reduce((acc, curr) => acc + (curr.production || 0), 0);
+        const realProduction = currentMonthRecords.reduce((acc: number, curr: DailyPerformance) => acc + (curr.production || 0), 0);
         const effectiveDays = fullDays + (halfDays * 0.5);
         const target = effectiveDays * (selectedUser.defaultDailyGoal || 0);
 
@@ -313,7 +328,7 @@ export const HumanResources = () => {
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${isCurrent ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
                                         {isCurrent ? 'Pendente' : 'Pago'}
                                     </span>
-                                    <button className="text-gray-400 hover:text-blue-600">
+                                    <button className="text-gray-400 hover:text-blue-600" title="Ver recibo">
                                         <FileText size={18} />
                                     </button>
                                 </div>
@@ -341,19 +356,20 @@ export const HumanResources = () => {
                             <label className="block text-xs font-medium text-gray-700 mb-1">Cargo / Função</label>
                             <input
                                 type="text"
+                                placeholder="Ex: Operador de Campo"
                                 disabled={!canEdit}
                                 className="w-full border rounded p-2 text-sm bg-white text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
                                 value={settingsData.jobTitle || ''}
-                                onChange={e => setSettingsData({ ...settingsData, jobTitle: e.target.value })}
-                            />
-                        </div>
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, jobTitle: e.target.value })}
+                            />                        </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">Categoria (Role)</label>
                             <select
+                                aria-label="Categoria (Role)"
                                 disabled={!canEdit}
                                 className="w-full border rounded p-2 text-sm bg-white text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
                                 value={settingsData.role}
-                                onChange={e => setSettingsData({ ...settingsData, role: e.target.value as Role })}
+                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSettingsData({ ...settingsData, role: e.target.value as Role })}
                             >
                                 <option value={Role.WORKER}>Operário</option>
                                 <option value={Role.MANAGER}>Gerente</option>
@@ -371,41 +387,45 @@ export const HumanResources = () => {
                             <div>
                                 <label className="block text-xs font-medium text-gray-500 mb-1">Valor Dia (D)</label>
                                 <input
+                                    aria-label="Valor Dia (D)"
                                     type="number" step="0.1"
                                     disabled={!canEdit}
                                     className="w-full border rounded p-2 text-sm font-semibold text-gray-800 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                                     value={settingsData.dailyRate || 0}
-                                    onChange={e => setSettingsData({ ...settingsData, dailyRate: parseFloat(e.target.value) })}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, dailyRate: parseFloat(e.target.value) })}
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-gray-500 mb-1">Valor Meio Dia (D/2)</label>
                                 <input
+                                    aria-label="Valor Meio Dia (D/2)"
                                     type="number" step="0.1"
                                     disabled={!canEdit}
                                     className="w-full border rounded p-2 text-sm font-semibold text-gray-800 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                                     value={settingsData.halfDayRate || 0}
-                                    onChange={e => setSettingsData({ ...settingsData, halfDayRate: parseFloat(e.target.value) })}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, halfDayRate: parseFloat(e.target.value) })}
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-gray-500 mb-1">Penalidade Falta (F)</label>
                                 <input
+                                    aria-label="Penalidade Falta (F)"
                                     type="number" step="0.1"
                                     disabled={!canEdit}
                                     className="w-full border rounded p-2 text-sm font-semibold text-red-600 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                                     value={settingsData.absencePenalty || 0}
-                                    onChange={e => setSettingsData({ ...settingsData, absencePenalty: parseFloat(e.target.value) })}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, absencePenalty: parseFloat(e.target.value) })}
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-gray-500 mb-1">Bónus por Unidade Extra</label>
                                 <input
+                                    aria-label="Bónus por Unidade Extra"
                                     type="number" step="0.1"
                                     disabled={!canEdit}
                                     className="w-full border rounded p-2 text-sm font-semibold text-green-600 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                                     value={settingsData.bonusPerUnit || 0}
-                                    onChange={e => setSettingsData({ ...settingsData, bonusPerUnit: parseFloat(e.target.value) })}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, bonusPerUnit: parseFloat(e.target.value) })}
                                 />
                             </div>
                         </div>
@@ -414,11 +434,12 @@ export const HumanResources = () => {
                     <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">Meta Diária Padrão (Árvores/Produção)</label>
                         <input
+                            aria-label="Meta Diária Padrão (Árvores/Produção)"
                             type="number"
                             disabled={!canEdit}
                             className="w-full border rounded p-2 text-sm bg-blue-50 text-blue-900 font-bold border-blue-200 disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-200"
                             value={settingsData.defaultDailyGoal || 0}
-                            onChange={e => setSettingsData({ ...settingsData, defaultDailyGoal: parseFloat(e.target.value) })}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, defaultDailyGoal: parseFloat(e.target.value) })}
                         />
                     </div>
 
@@ -463,7 +484,7 @@ export const HumanResources = () => {
                                 type="text"
                                 className="w-full border rounded p-2 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
                                 value={formData.name}
-                                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
                                 placeholder="Ex: João da Silva"
                             />
                         </div>
@@ -475,7 +496,7 @@ export const HumanResources = () => {
                                 type="text"
                                 className="w-full border rounded p-2 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
                                 value={formData.jobTitle}
-                                onChange={e => setFormData({ ...formData, jobTitle: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, jobTitle: e.target.value })}
                                 placeholder="Ex: Operador de Máquina"
                             />
                         </div>
@@ -487,7 +508,7 @@ export const HumanResources = () => {
                                 type="email"
                                 className="w-full border rounded p-2 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
                                 value={formData.email}
-                                onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, email: e.target.value })}
                                 placeholder="funcionario@example.com"
                             />
                         </div>
@@ -500,7 +521,7 @@ export const HumanResources = () => {
                                 minLength={6}
                                 className="w-full border rounded p-2 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
                                 value={formData.password}
-                                onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, password: e.target.value })}
                                 placeholder="Mínimo 6 caracteres"
                             />
                         </div>
@@ -508,9 +529,10 @@ export const HumanResources = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Nível de Acesso</label>
                             <select
+                                aria-label="Nível de Acesso"
                                 className="w-full border rounded p-2 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
                                 value={formData.role}
-                                onChange={e => setFormData({ ...formData, role: e.target.value as Role })}
+                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, role: e.target.value as Role })}
                             >
                                 <option value={Role.WORKER}>Operário (Campo)</option>
                                 <option value={Role.MANAGER}>Gerente Regional</option>
@@ -525,23 +547,23 @@ export const HumanResources = () => {
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Valor Dia</label>
-                                        <input type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.dailyRate} onChange={e => setFormData({ ...formData, dailyRate: parseFloat(e.target.value) })} />
+                                        <input aria-label="Valor Dia" type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.dailyRate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, dailyRate: parseFloat(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Valor Meio Dia</label>
-                                        <input type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.halfDayRate} onChange={e => setFormData({ ...formData, halfDayRate: parseFloat(e.target.value) })} />
+                                        <input aria-label="Valor Meio Dia" type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.halfDayRate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, halfDayRate: parseFloat(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Valor Falta</label>
-                                        <input type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.absencePenalty} onChange={e => setFormData({ ...formData, absencePenalty: parseFloat(e.target.value) })} />
+                                        <input aria-label="Valor Falta" type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.absencePenalty} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, absencePenalty: parseFloat(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Bónus (Unid)</label>
-                                        <input type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.bonusPerUnit} onChange={e => setFormData({ ...formData, bonusPerUnit: parseFloat(e.target.value) })} />
+                                        <input aria-label="Bónus (Unid)" type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.bonusPerUnit} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, bonusPerUnit: parseFloat(e.target.value) })} />
                                     </div>
                                     <div className="col-span-2">
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Meta Diária (Produção)</label>
-                                        <input type="number" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.defaultDailyGoal} onChange={e => setFormData({ ...formData, defaultDailyGoal: parseFloat(e.target.value) })} />
+                                        <input aria-label="Meta Diária (Produção)" type="number" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.defaultDailyGoal} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, defaultDailyGoal: parseFloat(e.target.value) })} />
                                     </div>
                                 </div>
                             </div>
@@ -550,9 +572,10 @@ export const HumanResources = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Departamento / Alocação</label>
                             <select
+                                aria-label="Departamento / Alocação"
                                 className="w-full border rounded p-2 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
-                                value={formData.locationId}
-                                onChange={e => setFormData({ ...formData, locationId: e.target.value })}
+                                value={formData.locationId || ''}
+                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, locationId: e.target.value })}
                             >
                                 <option value="">Selecione...</option>
                                 {locations.filter((loc, index, self) =>
@@ -603,23 +626,23 @@ export const HumanResources = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {filteredUsers.map(user => (
-                                    <tr key={user.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => handleOpenModal(user)}>
-                                        <td className="px-4 py-3 font-medium text-gray-800 flex items-center gap-2">
+                                    <tr key={user.id} className="hover:bg-slate-50">
+                                        <td className="px-4 py-3 font-medium text-gray-800 flex items-center gap-2 cursor-pointer" onClick={() => handleOpenModal(user)}>
                                             <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
                                                 {user.name.charAt(0)}
                                             </div>
                                             {user.name}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-600">{user.jobTitle || '-'}</td>
-                                        <td className="px-4 py-3 text-sm text-gray-600 flex items-center gap-1">
+                                        <td className="px-4 py-3 text-sm text-gray-600 cursor-pointer" onClick={() => handleOpenModal(user)}>{user.jobTitle || '-'}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-600 flex items-center gap-1 cursor-pointer" onClick={() => handleOpenModal(user)}>
                                             <MapPin size={12} className="text-gray-400" />
                                             {locations.find(l => l.id === user.locationId)?.name}
                                         </td>
-                                        <td className="px-4 py-3 text-sm font-bold text-gray-700 text-center">
+                                        <td className="px-4 py-3 text-sm font-bold text-gray-700 text-center cursor-pointer" onClick={() => handleOpenModal(user)}>
                                             {user.defaultDailyGoal ? user.defaultDailyGoal : '-'}
                                         </td>
                                         <td className="px-4 py-3 text-center">
-                                            <button className="text-blue-600 hover:text-blue-800 text-xs font-medium border border-blue-200 px-2 py-1 rounded bg-blue-50">
+                                            <button onClick={() => handleOpenModal(user)} aria-label={`Abrir perfil de ${user.name}`} title={`Abrir perfil de ${user.name}`} className="text-blue-600 hover:text-blue-800 text-xs font-medium border border-blue-200 px-2 py-1 rounded bg-blue-50">
                                                 Perfil
                                             </button>
                                         </td>
@@ -651,9 +674,20 @@ export const HumanResources = () => {
                                     </p>
                                 </div>
                             </div>
-                            <button onClick={() => setSelectedUser(null)} className="text-slate-400 hover:text-white p-2">
-                                <X size={24} />
-                            </button>
+                            <div className="flex gap-2">
+                                {isAdminOrGM && (
+                                    <button
+                                        onClick={() => handleDeleteUser(selectedUser)}
+                                        className="text-red-400 hover:text-red-300 p-2 hover:bg-red-900/20 rounded transition"
+                                        title="Apagar Funcionário"
+                                    >
+                                        <Trash2 size={20} />
+                                    </button>
+                                )}
+                                <button onClick={() => setSelectedUser(null)} className="text-slate-400 hover:text-white p-2" aria-label="Fechar">
+                                    <X size={24} />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Navigation Tabs */}
@@ -678,6 +712,35 @@ export const HumanResources = () => {
                         {/* Content Body */}
                         <div className="flex-1 overflow-y-auto p-6 bg-white">
                             {renderModalContent()}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- DELETE CONFIRMATION MODAL --- */}
+            {isDeleteModalOpen && userToDelete && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+                        <h3 className="text-lg font-bold text-gray-900 mb-4">Confirmar Apagamento de Funcionário</h3>
+                        <p className="text-gray-600 mb-6">
+                            Tem a certeza que deseja apagar o funcionário <strong>{userToDelete.name}</strong>? Esta ação não pode ser desfeita e todos os seus dados relacionados serão removidos.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => {
+                                    setIsDeleteModalOpen(false);
+                                    setUserToDelete(null);
+                                }}
+                                className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium transition"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={confirmDeleteUser}
+                                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 font-medium transition flex items-center gap-2"
+                            >
+                                <Trash2 size={16} /> Apagar
+                            </button>
                         </div>
                     </div>
                 </div>

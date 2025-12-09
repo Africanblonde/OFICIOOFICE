@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useLogistics } from '../context/LogisticsContext';
+import { useLogistics } from '../context/useLogistics';
 import { LocationType, Role, RequestStatus } from '../types';
 import {
   LayoutDashboard,
@@ -50,6 +50,25 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
   } = useLogistics();
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Wrapper para refreshData com feedback visual
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      console.log('🔄 Usuário clicou em Sincronizar');
+      await refreshData();
+      // Se ainda estiver como WORKER após refresh, fazer hard reload
+      setTimeout(() => {
+        if (currentUser?.role === 'WORKER' && currentUser?.email === 'davidjuniormuianga@gmail.com') {
+          console.log('⚠️ Ainda WORKER após refresh, fazendo hard reload...');
+          window.location.reload();
+        }
+      }, 1000);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Show loading if user not loaded yet
   if (!currentUser) {
@@ -359,8 +378,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
               <span className="hidden md:inline">{lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               <button
-                onClick={refreshData}
-                className="hover:text-blue-600 transition-colors p-1"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className={`hover:text-blue-600 transition-colors p-1 ${isRefreshing ? 'animate-spin text-blue-600' : ''}`}
                 title="Sincronizar agora"
               >
                 <RefreshCw size={14} />

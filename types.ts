@@ -50,7 +50,7 @@ export interface User {
   id: string;
   name: string;
   role: Role;
-  locationId: string; // Creates the hierarchy link
+  locationId: string | null; // Creates the hierarchy link (null = no location assigned)
   jobTitle?: string; // Cargo (ex: Motosserrista)
 
   // New Salary Structure
@@ -59,6 +59,7 @@ export interface User {
   halfDayRate?: number;      // Valor Meio Dia (ex: 118)
   absencePenalty?: number;   // Valor Desconto Falta (ex: 95)
   bonusPerUnit?: number;     // Valor Bónus por árvore extra (ex: 10)
+  email?: string; // Added email field
 }
 
 export interface PayrollRecord {

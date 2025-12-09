@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Invoice, PaymentMethod, InvoicePayment } from '../types';
-import { calcularTotais, valorPago } from './InvoiceModal';
+import { calcularTotais, valorPago } from '../utils/invoice';
 import { X, DollarSign, CreditCard, CheckCircle } from 'lucide-react';
 
 interface Props {

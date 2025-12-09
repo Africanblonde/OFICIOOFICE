@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useLogistics } from '../context/LogisticsContext';
+import { useLogistics } from '../context/useLogistics';
 import { Banknote, Calculator, DollarSign, TrendingDown, Users } from 'lucide-react';
 import { PayrollRecord } from '../types';
 

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { useLogistics } from '../context/LogisticsContext';
+import { useLogistics } from '../context/useLogistics';
 import { RequestStatus, Role, ItemType, ItemCondition } from '../types';
 import {
   CheckCircle,
@@ -44,7 +44,7 @@ export const Requisitions = () => {
   // Filter logic: Admins see all. Managers see their own + sub-locations. Workers see theirs.
   const myRequisitions = requisitions.filter(req => {
     if (isAdminOrGM) return true;
-    if (currentUser.role === Role.MANAGER) {
+    if (currentUser?.role === Role.MANAGER) {
       const isParentOfSource = locations.find(l => l.id === req.sourceLocationId)?.parentId === currentUser.locationId;
       const isParentOfTarget = locations.find(l => l.id === req.targetLocationId)?.parentId === currentUser.locationId;
 
@@ -53,7 +53,7 @@ export const Requisitions = () => {
         isParentOfSource || isParentOfTarget;
     }
     // Workers
-    return req.targetLocationId === currentUser.locationId || req.requesterId === currentUser.id;
+    return req.targetLocationId === currentUser?.locationId || req.requesterId === currentUser?.id;
   });
 
   const toggleExpand = (reqId: string) => {
@@ -100,15 +100,15 @@ export const Requisitions = () => {
   // Logic for Action Buttons based on Role & Location
   const renderActions = (req: any, mobile: boolean = false) => {
     // 1. Identify Authority over this Requisition
-    const isSourceManager = currentUser.role === Role.MANAGER && (req.sourceLocationId === currentUser.locationId || locations.find(l => l.id === req.sourceLocationId)?.parentId === currentUser.locationId);
-    const isTargetManager = currentUser.role === Role.MANAGER && (req.targetLocationId === currentUser.locationId || locations.find(l => l.id === req.targetLocationId)?.parentId === currentUser.locationId);
+    const isSourceManager = currentUser?.role === Role.MANAGER && (req.sourceLocationId === currentUser.locationId || locations.find(l => l.id === req.sourceLocationId)?.parentId === currentUser.locationId);
+    const isTargetManager = currentUser?.role === Role.MANAGER && (req.targetLocationId === currentUser.locationId || locations.find(l => l.id === req.targetLocationId)?.parentId === currentUser.locationId);
     const hasAuthority = isAdminOrGM || isSourceManager || isTargetManager;
 
     const btnClass = mobile
       ? "flex-1 py-3 justify-center text-sm font-bold shadow-md"
       : "px-3 py-1 text-xs shadow-sm whitespace-nowrap";
 
-    if (!hasAuthority && currentUser.role !== Role.WORKER) {
+    if (!hasAuthority && currentUser?.role !== Role.WORKER) {
       return <span className="text-gray-300 text-xs flex items-center gap-1"><Lock size={10} /> Visualização</span>;
     }
 
@@ -169,7 +169,7 @@ export const Requisitions = () => {
         );
       }
       // Worker Self-Check
-      if (currentUser.role === Role.WORKER && req.targetLocationId === currentUser.locationId) {
+      if (currentUser?.role === Role.WORKER && req.targetLocationId === currentUser.locationId) {
         return (
           <button
             onClick={(e) => { e.stopPropagation(); updateRequisitionStatus(req.id, RequestStatus.CONFIRMED); }}
@@ -204,7 +204,7 @@ export const Requisitions = () => {
           <h2 className="text-xl md:text-2xl font-bold text-gray-800">Fluxo de Requisições</h2>
           <p className="text-sm text-gray-500">Gerencie a entrada e saída de materiais.</p>
         </div>
-        {currentUser.role !== Role.ADMIN && currentUser.role !== Role.GENERAL_MANAGER && (
+        {currentUser?.role !== Role.ADMIN && currentUser?.role !== Role.GENERAL_MANAGER && (
           <button
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-3 md:py-2 rounded-lg hover:bg-blue-700 transition shadow-md w-full md:w-auto justify-center font-medium"
@@ -368,7 +368,7 @@ export const Requisitions = () => {
           <div className="bg-white rounded-t-2xl md:rounded-xl shadow-2xl w-full max-w-md p-6 animate-in slide-in-from-bottom-10 md:slide-in-from-bottom-4 duration-200">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-gray-900">Nova Requisição</h3>
-              <button onClick={() => setIsModalOpen(false)} className="bg-gray-100 p-1 rounded-full"><X size={20} className="text-gray-500" /></button>
+              <button onClick={() => setIsModalOpen(false)} className="bg-gray-100 p-1 rounded-full" title="Fechar" aria-label="Fechar"><X size={20} className="text-gray-500" /></button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">

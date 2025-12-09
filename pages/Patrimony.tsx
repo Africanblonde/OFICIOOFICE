@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { useLogistics } from '../context/LogisticsContext';
+import { useLogistics } from '../context/useLogistics';
 import { ItemType, LocationType } from '../types';
 import { Landmark, TrendingUp, DollarSign, PieChart, FileText, ArrowUpRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, Cell, PieChart as RePieChart, Pie } from 'recharts';

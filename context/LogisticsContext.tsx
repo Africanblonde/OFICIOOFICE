@@ -8,6 +8,7 @@ import {
 } from '../types';
 // Removed demo constants imports (USERS, ITEMS, LOCATIONS, etc.)
 import { supabase } from '../services/supabaseClient';
+import createUserWithEdge from '../services/userService';
 import { DEFAULT_ROLE_PERMISSIONS } from '../constants';
 
 interface LogisticsContextType {
@@ -54,8 +55,10 @@ interface LogisticsContextType {
   refreshData: () => void;
   registerNewItem: (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number) => void;
   addToInventory: (itemId: string, locationId: string, qty: number, unitPrice: number) => void;
-  addNewUser: (user: User, email: string, password: string) => void;
+  deleteItem: (itemId: string) => Promise<void>;
+  addUser: (user: { name: string; email: string; password?: string; role: Role; locationId?: string; jobTitle?: string; defaultDailyGoal?: number; dailyRate?: number; halfDayRate?: number; absencePenalty?: number; bonusPerUnit?: number; }) => Promise<void>;
   updateUser: (updatedUser: User) => void;
+  deleteUser: (userId: string) => Promise<void>;
   addLocation: (name: string, type: LocationType, parentId: string | null) => void;
   removeLocation: (locationId: string) => void;
   addCategory: (category: string) => void;
@@ -91,7 +94,8 @@ interface LogisticsContextType {
   calculatePayrollForUser: (user: User) => PayrollRecord;
 }
 
-const LogisticsContext = createContext<LogisticsContextType | undefined>(undefined);
+
+export const LogisticsContext = createContext<LogisticsContextType | undefined>(undefined);
 
 export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Initialize with first user from Supabase or a default admin
@@ -108,6 +112,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [performanceRecords, setPerformanceRecords] = useState<DailyPerformance[]>([]);
   const [accountingEntries, setAccountingEntries] = useState<AccountingEntry[]>([]);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]); // Added missing state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   // Helper to map transactions returned from DB (snake_case) to app model (camelCase)
   const mapDbTransactionToApp = (txn: any): Transaction => ({
@@ -125,6 +130,13 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     items: txn.items?.map((it: any) => ({ itemId: it.item_id, name: it.name, quantity: it.quantity, unitPrice: it.unit_price })) || [],
     invoiceId: txn.invoice_id || null
   });
+
+  // Helper: validate UUID format
+  const isValidUuid = (id?: string | null) => {
+    if (!id) return false;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  };
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -171,6 +183,8 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       const { data: { session } } = await supabase.auth.getSession();
       let actor: User | null = null;
       if (session?.user) {
+        console.log('👤 Sessão encontrada para usuário:', session.user.id, session.user.email);
+
         // Try to load user from database
         const { data: userData, error } = await supabase
           .from('users')
@@ -185,7 +199,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
             id: userData.id,
             name: userData.name,
             role: userData.role,
-            locationId: userData.location_id || '',
+            locationId: userData.location_id || null,
             jobTitle: userData.job_title,
             defaultDailyGoal: userData.default_daily_goal,
             dailyRate: userData.daily_rate,
@@ -194,20 +208,34 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
             bonusPerUnit: userData.bonus_per_unit
           };
           console.log('👤 Usuário mapeado para aplicação:', mappedUser);
-          console.log('🔐 Role do usuário:', mappedUser.role);
+          console.log('🔐 Role do usuário (BD):', mappedUser.role);
           actor = mappedUser;
           setCurrentUser(mappedUser);
-        } else {
+        } else if (error) {
+          console.error('❌ Erro ao buscar usuário do BD:', error);
           // Fallback for new users who haven't been saved to DB yet
           const tempUser: User = {
             id: session.user.id,
             name: session.user.user_metadata?.name || session.user.email || 'User',
             role: Role.WORKER,
-            locationId: '',
+            locationId: null,
+          };
+          console.warn('⚠️ Usando fallback (WORKER) pois usuário não existe no BD ainda');
+          actor = tempUser;
+          setCurrentUser(tempUser);
+        } else {
+          console.error('❌ userData vazio mas sem erro (situação estranha)');
+          const tempUser: User = {
+            id: session.user.id,
+            name: session.user.user_metadata?.name || session.user.email || 'User',
+            role: Role.WORKER,
+            locationId: null,
           };
           actor = tempUser;
           setCurrentUser(tempUser);
         }
+      } else {
+        console.warn('⚠️ Nenhuma sessão disponível');
       }
 
       // Fetch all users only when the signed-in actor is an Admin or General Manager.
@@ -223,7 +251,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
             id: user.id,
             name: user.name,
             role: user.role,
-            locationId: user.location_id || '',
+            locationId: user.location_id || null,
             jobTitle: user.job_title,
             defaultDailyGoal: user.default_daily_goal,
             dailyRate: user.daily_rate,
@@ -335,7 +363,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           category: txn.category,
           amount: txn.amount,
           paymentMethod: txn.payment_method,
-          items: txn.items?.map(item => ({
+          items: txn.items?.map((item: any) => ({
             itemId: item.item_id,
             name: item.name,
             quantity: item.quantity,
@@ -403,12 +431,39 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     loadData();
   }, []);
 
+  // Force refresh of current user data after initial load to ensure we have latest role
+  useEffect(() => {
+    if (!isLoadingUser && currentUser) {
+      // Wait a moment for data to settle, then refresh
+      const timeoutId = setTimeout(() => {
+        console.log('🔄 Forçando atualização do perfil do usuário após carregamento inicial...');
+        refreshData();
+      }, 500);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isLoadingUser]);
+
   // 20 Minutes Interval
   const REFRESH_INTERVAL = 20 * 60 * 1000;
 
-  const showNotification = (msg: string) => {
+  // Notification timeout reference to allow clearing/resetting it
+  const notificationTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showNotification = (msg: string, duration: number = 5000) => {
+    // Clear any existing timeout
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+
+    console.log('📢 Notificação:', msg);
     setNotification(msg);
-    setTimeout(() => setNotification(null), 4000);
+
+    // Set new timeout
+    notificationTimeoutRef.current = setTimeout(() => {
+      setNotification(null);
+      notificationTimeoutRef.current = null;
+    }, duration);
   };
 
   const hasPermission = (permission: AppPermission): boolean => {
@@ -438,7 +493,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const refreshData = async () => {
-    console.log("Sincronizando dados com o servidor...");
+    console.log("🔄 Sincronizando dados com o servidor...");
 
     // Refresh lastUpdated timestamp
     setLastUpdated(new Date());
@@ -446,9 +501,14 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       // Re-fetch session and re-load current user's profile from public.users
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
+      if (!session?.user) {
+        console.warn('⚠️ Sem sessão de usuário disponível');
+        return;
+      }
 
-      // Try reading current user's profile from public.users (fresh from DB)
+      console.log('📡 Buscando dados frescos para usuário:', session.user.id);
+
+      // Force a fresh fetch by using .single() and not caching
       const { data: userData, error } = await supabase
         .from('users')
         .select('*')
@@ -456,12 +516,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         .single();
 
       if (!error && userData) {
-        console.log('🔄 Refresh: Dados atualizados do Supabase:', userData);
+        console.log('✅ Dados atualizados do Supabase:', userData);
         const mappedUser: User = {
           id: userData.id,
           name: userData.name,
           role: userData.role,
-          locationId: userData.location_id || '',
+          locationId: userData.location_id || null,
           jobTitle: userData.job_title,
           defaultDailyGoal: userData.default_daily_goal,
           dailyRate: userData.daily_rate,
@@ -469,20 +529,31 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           absencePenalty: userData.absence_penalty,
           bonusPerUnit: userData.bonus_per_unit
         };
-        console.log('🔄 Role atualizada:', userData.role, '→', mappedUser.role);
+        console.log('📋 Dados mapeados:', mappedUser);
+        console.log('🔐 Role atualizada:', userData.role, '→', mappedUser.role);
+
+        // Check if role changed
+        const roleChanged = currentUser && currentUser.role !== mappedUser.role;
+        if (roleChanged) {
+          console.log('⚠️ ROLE ALTERADA! De', currentUser?.role, 'para', mappedUser.role);
+          showNotification(`✨ Seu role foi atualizado para: ${mappedUser.role}`, 6000);
+        } else {
+          console.log('✓ Role mantém-se:', mappedUser.role);
+        }
 
         // Update currentUser with fresh data
         setCurrentUser(mappedUser);
 
         // If user is admin/GM, re-fetch all users; otherwise ensure allUsers contains only self
         if (mappedUser.role === Role.ADMIN || mappedUser.role === Role.GENERAL_MANAGER) {
+          console.log('👥 Usuário é ADMIN/GM, buscando lista completa de usuários');
           const { data: usersData } = await supabase.from('users').select('*');
           if (usersData) {
             const mappedUsers = usersData.map((user: any) => ({
               id: user.id,
               name: user.name,
               role: user.role,
-              locationId: user.location_id || '',
+              locationId: user.location_id || null,
               jobTitle: user.job_title,
               defaultDailyGoal: user.default_daily_goal,
               dailyRate: user.daily_rate,
@@ -490,15 +561,19 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
               absencePenalty: user.absence_penalty,
               bonusPerUnit: user.bonus_per_unit
             }));
+            console.log(`📊 ${mappedUsers.length} usuários carregados`);
             setAllUsers(mappedUsers);
           }
         } else {
+          console.log('👤 Usuário é comum, apenas seu próprio perfil será exibido');
           // Ensure non-admins do not keep a large allUsers list
           setAllUsers([mappedUser]);
         }
+      } else if (error) {
+        console.error('❌ Erro ao buscar dados do usuário:', error);
       }
     } catch (err) {
-      console.error('Error refreshing profile:', err);
+      console.error('❌ Error refreshing profile:', err);
     }
   };
 
@@ -521,7 +596,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const createRequisition = async (itemId: string, quantity: number, condition: ItemCondition, customTargetLocationId?: string) => {
+    if (!currentUser) return; // Guard
     const targetId = customTargetLocationId || currentUser.locationId;
+    if (!targetId) {
+      showNotification("Erro: Localização de destino não definida.");
+      return;
+    }
     const sourceId = getSourceLocation(targetId);
 
     const { data: reqData, error: reqError } = await supabase.from('requisitions').insert({
@@ -654,6 +734,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const addToInventory = (itemId: string, locationId: string, qty: number, unitPrice: number) => {
     if (!currentUser) return;
+    // Validate locationId is provided and well-formed UUID
+    if (!locationId || !isValidUuid(locationId)) {
+      showNotification('Erro: Localização inválida. Selecione uma localização válida antes de adicionar estoque.');
+      return;
+    }
+
     if (currentUser.role === Role.MANAGER && locationId !== currentUser.locationId) {
       alert("Você só pode adicionar estoque à sua própria localização.");
       return;
@@ -703,6 +789,47 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   };
 
+  const deleteItem = async (itemId: string) => {
+    if (!currentUser || currentUser.role !== Role.ADMIN) {
+      showNotification("❌ ACESSO NEGADO: Apenas administradores podem apagar itens.");
+      return;
+    }
+
+    // Check if item exists in inventory
+    const hasInventory = inventory.some(inv => inv.itemId === itemId);
+    if (hasInventory) {
+      showNotification("❌ Não é possível apagar item com estoque registrado. Remova o estoque primeiro.");
+      return;
+    }
+
+    // Delete from Supabase
+    const { error } = await supabase.from('items').delete().eq('id', itemId);
+
+    if (error) {
+      // RLS rejection
+      if ((error as any).status === 403 || /policy/i.test(error.message || '')) {
+        console.warn('RLS rejection on deleteItem', { userId: currentUser.id, itemId, error });
+        showNotification('❌ RLS policy rejected deletion (unauthorized).');
+        return;
+      }
+
+      // Foreign key / conflict (has inventory or other constraints)
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('foreign key') || msg.includes('violates') || msg.includes('conflict') || msg.includes('cannot delete')) {
+        showNotification('❌ Item tem registos associados (estoque ou dependências). Remova-os antes de apagar.');
+        return;
+      }
+
+      // Generic fallback
+      showNotification(`❌ Erro ao apagar item: ${error.message}`);
+      return;
+    }
+
+    // Update local state
+    setItems(prev => prev.filter(i => i.id !== itemId));
+    showNotification(`✅ Item apagado com sucesso.`);
+  };
+
   const getInventoryByLocation = (locationId: string) => {
     return inventory.filter(r => r.locationId === locationId);
   };
@@ -711,6 +838,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   const getLocationName = (locationId: string) => locations.find(l => l.id === locationId)?.name || 'Local desconhecido';
 
   const savePerformanceRecord = async (record: DailyPerformance) => {
+    if (!currentUser) return;
     const isSystemAdmin = currentUser.role === Role.ADMIN || currentUser.role === Role.GENERAL_MANAGER;
 
     const existingIndex = performanceRecords.findIndex(r => r.id === record.id || (r.workerId === record.workerId && r.date === record.date));
@@ -758,67 +886,16 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     const managedLocationId = manager.locationId;
     const subLocations = locations.filter(l => l.parentId === managedLocationId).map(l => l.id);
     const relevantLocationIds = [managedLocationId, ...subLocations];
-    return allUsers.filter(u => u.role === Role.WORKER && relevantLocationIds.includes(u.locationId));
+    return allUsers.filter(u => u.role === Role.WORKER && u.locationId && relevantLocationIds.includes(u.locationId));
   };
 
   const getWorkersByLocation = (locationId: string) => {
     const subLocations = locations.filter(l => l.parentId === locationId).map(l => l.id);
     const relevantLocationIds = [locationId, ...subLocations];
-    return allUsers.filter(u => u.role === Role.WORKER && relevantLocationIds.includes(u.locationId));
+    return allUsers.filter(u => u.role === Role.WORKER && u.locationId && relevantLocationIds.includes(u.locationId));
   };
 
-  const addNewUser = async (user: User, email: string, password: string) => {
-    try {
-      // Chamar Edge Function para criar usuário
-      const { data: { session } } = await supabase.auth.getSession();
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`
-          },
-          body: JSON.stringify({
-            email,
-            password,
-            userData: {
-              name: user.name,
-              role: user.role,
-              locationId: user.locationId,
-              jobTitle: user.jobTitle,
-              defaultDailyGoal: user.defaultDailyGoal,
-              dailyRate: user.dailyRate,
-              halfDayRate: user.halfDayRate,
-              absencePenalty: user.absencePenalty,
-              bonusPerUnit: user.bonusPerUnit
-            }
-          })
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao criar usuário');
-      }
-
-      // Atualizar estado local com o usuário criado
-      const completeUser: User = {
-        ...user,
-        id: result.userId
-      };
-
-      setAllUsers(prev => [...prev, completeUser]);
-      showNotification(`✅ Funcionário ${user.name} cadastrado com sucesso!`);
-      showNotification(`📧 Login: ${email} | Senha: ${password}`);
-
-    } catch (err: any) {
-      console.error('Erro ao criar usuário:', err);
-      showNotification(`❌ Erro ao criar usuário: ${err.message}`);
-    }
-  };
 
   const updateUser = async (updatedUser: User) => {
     try {
@@ -852,6 +929,56 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       console.error('Erro ao atualizar usuário:', err);
       showNotification(`Erro ao atualizar: ${err.message}`);
     }
+  };
+
+  const deleteUser = async (userId: string) => {
+    if (!currentUser || currentUser.role !== Role.ADMIN) {
+      showNotification("❌ ACESSO NEGADO: Apenas administradores podem apagar funcionários.");
+      return;
+    }
+
+    // Prevent deleting the current user (admin)
+    if (userId === currentUser.id) {
+      showNotification("❌ Não é possível apagar sua própria conta.");
+      return;
+    }
+
+    // Delete from public.users table
+    const { error: userError } = await supabase.from('users').delete().eq('id', userId);
+
+    if (userError) {
+      // RLS rejection
+      if ((userError as any).status === 403 || /policy/i.test(userError.message || '')) {
+        console.warn('RLS rejection on deleteUser', { actorId: currentUser.id, targetUserId: userId, error: userError });
+        showNotification('❌ RLS policy rejected deletion (unauthorized).');
+        return;
+      }
+
+      const msg = (userError.message || '').toLowerCase();
+      // Not found
+      if ((userError as any).status === 404 || msg.includes('not found') || msg.includes('no rows')) {
+        showNotification('❌ Usuário não encontrado.');
+        return;
+      }
+
+      // FK / constraint problems when deleting user
+      if (msg.includes('foreign key') || msg.includes('violates') || msg.includes('conflict')) {
+        showNotification('❌ Erro de integridade: o usuário tem registos dependentes. Remova dependências antes de apagar.');
+        return;
+      }
+
+      // Generic fallback
+      showNotification(`❌ Erro ao apagar funcionário: ${userError.message}`);
+      return;
+    }
+
+    // Delete from auth.users (this should cascade if properly configured)
+    // Note: Supabase admin API might be needed for this, but we can try
+    // For now, the public.users deletion is sufficient
+
+    // Update local state
+    setAllUsers(prev => prev.filter(u => u.id !== userId));
+    showNotification(`✅ Funcionário apagado com sucesso.`);
   };
 
   const addLocation = async (name: string, type: LocationType, parentId: string | null) => {
@@ -998,6 +1125,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
 
     // Create transaction
+    // Validate currentUser id
+    if (!isValidUuid(currentUser.id)) {
+      showNotification('Erro: ID do usuário inválido. Contate o administrador.');
+      return;
+    }
+
     const transactionData: any = {
       type: TransactionType.SALE,
       user_id: currentUser.id,
@@ -1009,13 +1142,22 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // Only include location_id if it's not null
     if (currentUser.locationId) {
+      if (!isValidUuid(currentUser.locationId)) {
+        showNotification('Erro: Localização do usuário inválida. Contate o administrador.');
+        return;
+      }
       transactionData.location_id = currentUser.locationId;
     }
 
     const { data: txnData, error: txnError } = await supabase.from('transactions').insert(transactionData).select().single();
 
     if (txnError) {
-      showNotification(`Erro ao processar venda: ${txnError.message}`);
+      const msg = txnError.message || '';
+      if (msg.toLowerCase().includes('foreign key') || msg.toLowerCase().includes('violates foreign key')) {
+        showNotification('Erro de integridade referencial ao processar venda. Verifique cliente, localização ou produtos.');
+      } else {
+        showNotification(`Erro ao processar venda: ${msg}`);
+      }
       return;
     }
 
@@ -1063,15 +1205,29 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       payment_method: paymentMethod
     };
 
+    if (!isValidUuid(currentUser.id)) {
+      showNotification('Erro: ID do usuário inválido. Contate o administrador.');
+      return;
+    }
+
     // Only include location_id if it's not null
     if (currentUser.locationId) {
+      if (!isValidUuid(currentUser.locationId)) {
+        showNotification('Erro: Localização do usuário inválida. Contate o administrador.');
+        return;
+      }
       expenseData.location_id = currentUser.locationId;
     }
 
     const { data, error } = await supabase.from('transactions').insert(expenseData).select().single();
 
     if (error) {
-      showNotification(`Erro ao registrar despesa: ${error.message}`);
+      const msg = error.message || '';
+      if (msg.toLowerCase().includes('foreign key') || msg.toLowerCase().includes('violates foreign key')) {
+        showNotification('Erro de integridade referencial ao registrar despesa. Verifique cliente/locais.');
+      } else {
+        showNotification(`Erro ao registrar despesa: ${msg}`);
+      }
       return;
     }
 
@@ -1100,6 +1256,27 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   const addInvoice = async (invoice: Invoice) => {
     // Persist invoice to DB, then items and payments
     try {
+      // Validate invoice.numero uniqueness before attempting insert
+      if (!invoice.numero || invoice.numero.trim() === '') {
+        showNotification('Número da fatura inválido.');
+        return;
+      }
+      const { data: existingInv } = await supabase.from('invoices').select('id').eq('numero', invoice.numero).limit(1);
+      if (existingInv && (existingInv as any).length > 0) {
+        showNotification(`Número de fatura já existe: ${invoice.numero}`);
+        return;
+      }
+
+      // Validate foreign-key style fields
+      if (invoice.locationId && !isValidUuid(invoice.locationId)) {
+        showNotification('Localização da fatura inválida. Remova ou selecione uma localização válida.');
+        return;
+      }
+      if (invoice.cliente && invoice.cliente.id && !isValidUuid(invoice.cliente.id)) {
+        showNotification('Cliente selecionado inválido. Verifique o cliente.');
+        return;
+      }
+
       const invoicePayload: any = {
         id: invoice.id,
         numero: invoice.numero,
@@ -1124,7 +1301,15 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       const { data: invData, error: invError } = await supabase.from('invoices').insert(invoicePayload).select().single();
       if (invError) {
-        showNotification(`Erro ao salvar fatura: ${invError.message}`);
+        // Friendly messages for FK violations
+        const msg = invError.message || '';
+        if (msg.toLowerCase().includes('foreign key') || msg.toLowerCase().includes('violates foreign key')) {
+          showNotification('Erro de integridade referencial: verifique cliente, localização ou produtos relacionados.');
+        } else if (msg.toLowerCase().includes('duplicate') || msg.toLowerCase().includes('unique')) {
+          showNotification('Número de fatura duplicado. Use outro número.');
+        } else {
+          showNotification(`Erro ao salvar fatura: ${msg}`);
+        }
         return;
       }
 
@@ -1459,13 +1644,19 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     // 2) Insert a transaction row for the payment (so receipts appear in transactions/history/reports)
     const txnPayload: any = {
       type: TransactionType.SALE,
-      user_id: currentUser.id,
+      user_id: currentUser?.id,
       invoice_id: invoiceId,
       description: `Recebimento (${invoice.numero})`,
       amount: payment.valor,
       payment_method: payment.modalidade
     };
-    if (currentUser.locationId) txnPayload.location_id = currentUser.locationId;
+    if (currentUser?.locationId) {
+      if (!isValidUuid(currentUser.locationId)) {
+        console.warn('Localização do usuário inválida ao criar transação de pagamento; gravando sem location_id.');
+      } else {
+        if (currentUser) txnPayload.location_id = currentUser.locationId;
+      }
+    }
 
     // Prefer to include client name / nuit if available on invoice object
     if ((invoice as any).cliente?.nome) txnPayload.client_name = (invoice as any).cliente.nome;
@@ -1475,6 +1666,11 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     else if ((invoice as any).client_nuit) txnPayload.client_nuit = (invoice as any).client_nuit;
 
     try {
+      // Validate user_id and location_id before insert
+      if (!isValidUuid(txnPayload.user_id)) {
+        showNotification('Erro: usuário inválido ao registrar transação. Contate o administrador.');
+        return;
+      }
       const { data: txRes, error: txErr } = await supabase.from('transactions').insert(txnPayload).select().single();
       if (txErr) {
         showNotification(`Erro ao registrar recebimento: ${txErr.message}`);
@@ -1566,62 +1762,56 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
   };
 
-  // Add new user (admin only)
+  // Add new user (admin only) - thin wrapper that delegates to services/userService
   const addUser = async (user: { name: string; email: string; password?: string; role: Role; locationId?: string; jobTitle?: string; defaultDailyGoal?: number; dailyRate?: number; halfDayRate?: number; absencePenalty?: number; bonusPerUnit?: number; }) => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      throw new Error("Ação não permitida: Usuário não autenticado.");
+    }
     if (!isAdminOrGM) {
-      showNotification('Apenas administradores podem criar usuários.');
-      return;
+      throw new Error('Apenas administradores podem criar usuários.');
+    }
+    if (!user.password) {
+      throw new Error('Senha é obrigatória');
     }
 
     try {
-      if (!user.password) {
-        showNotification('Erro: Senha é obrigatória');
-        return;
+      showNotification(`⏳ Criando usuário ${user.name}...`);
+
+      const result = await createUserWithEdge({
+        name: user.name,
+        email: user.email,
+        password: user.password,
+        role: String(user.role),
+        locationId: user.locationId || null,
+        jobTitle: user.jobTitle || null,
+        defaultDailyGoal: user.defaultDailyGoal ?? null,
+        dailyRate: user.dailyRate ?? null,
+        halfDayRate: user.halfDayRate ?? null,
+        absencePenalty: user.absencePenalty ?? null,
+        bonusPerUnit: user.bonusPerUnit ?? null
+      });
+
+      if (!result.success) {
+        console.error('❌ Edge Function error:', result);
+        const msg = result.error || `Erro ao criar usuário (status ${result.status || 'unknown'})`;
+        showNotification(`❌ Erro: ${msg}`);
+        throw new Error(msg);
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
+      console.log('✅ Usuário criado com sucesso! ID:', result.data?.userId || result.data?.user_id || null);
+      showNotification(`📝 Usuário criado! Atualizando lista...`);
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`
-          },
-          body: JSON.stringify({
-            email: user.email,
-            password: user.password,
-            userData: {
-              name: user.name,
-              role: user.role,
-              locationId: user.locationId,
-              jobTitle: user.jobTitle,
-              defaultDailyGoal: user.defaultDailyGoal,
-              dailyRate: user.dailyRate,
-              halfDayRate: user.halfDayRate,
-              absencePenalty: user.absencePenalty,
-              bonusPerUnit: user.bonusPerUnit
-            }
-          })
-        }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao criar usuário');
-      }
-
-      // Refresh users
-      const { data: usersData } = await supabase.from('users').select('*');
-      if (usersData) {
+      // Refresh users list
+      const { data: usersData, error: selectError } = await supabase.from('users').select('*');
+      if (selectError) {
+        console.error('Erro ao buscar lista de usuários:', selectError);
+        showNotification(`⚠️ Usuário criado, mas erro ao atualizar lista`);
+      } else if (usersData) {
         const mappedUsers = usersData.map((u: any) => ({
           id: u.id,
           name: u.name,
           role: u.role,
-          locationId: u.location_id || '',
+          locationId: u.location_id || null,
           jobTitle: u.job_title,
           defaultDailyGoal: u.default_daily_goal,
           dailyRate: u.daily_rate,
@@ -1630,12 +1820,14 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           bonusPerUnit: u.bonus_per_unit
         }));
         setAllUsers(mappedUsers);
+        showNotification(`✅ Usuário ${user.name} criado com sucesso!`, 6000);
       }
-      showNotification(`Usuário ${user.name} criado com sucesso.`);
 
-    } catch (error) {
-      console.error('Exception:', error);
-      showNotification('Erro ao criar usuário: ' + (error as Error).message);
+    } catch (error: any) {
+      console.error('❌ Exception ao criar usuário:', error);
+      const errorMsg = error?.message || 'Erro desconhecido ao criar usuário';
+      showNotification(`❌ Erro: ${errorMsg}`, 6000);
+      throw error;
     }
   };
 
@@ -1655,31 +1847,22 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   return (
     <LogisticsContext.Provider value={{
-      currentUser, allUsers, items, locations, inventory, requisitions, performanceRecords, accountingEntries, transactions, invoices, clients,
+      currentUser, allUsers, items, locations, inventory, requisitions, performanceRecords, accountingEntries, transactions, invoices, clients, logEntries,
       selectedDepartmentId, lastUpdated, notification, isAdminOrGM,
       categories, measureUnits, itemTypes, rolePermissions,
       paymentMethods, expenseCategories, companyInfo, availableCurrencies, defaultCurrency,
       payrollParams,
       setSelectedDepartmentId, createRequisition, updateRequisitionStatus,
       getInventoryByLocation, getItemName, getLocationName, savePerformanceRecord, getWorkersByManager,
-      getWorkersByLocation, refreshData, registerNewItem, addToInventory,
-      addNewUser, updateUser, addLocation, removeLocation, addCategory, addMeasureUnit, addItemType,
+      getWorkersByLocation, refreshData, registerNewItem, addToInventory, deleteItem,
+      addUser, updateUser, deleteUser, addLocation, removeLocation, addCategory, addMeasureUnit, addItemType,
       addPaymentMethod, removePaymentMethod, addExpenseCategory, removeExpenseCategory, updateCompanyInfo, setDefaultCurrency,
       processSale, registerExpense, hasPermission, togglePermission,
       addInvoice, updateInvoice, deleteInvoice, getNextInvoiceNumber, registerPayment,
       addClient, updateClient, getClientBalance,
-      updatePayrollParams, calculatePayrollForUser,
-      addUser
+      updatePayrollParams, calculatePayrollForUser
     }}>
       {children}
     </LogisticsContext.Provider>
   );
-};
-
-export const useLogistics = () => {
-  const context = useContext(LogisticsContext);
-  if (!context) {
-    throw new Error('useLogistics must be used within a LogisticsProvider');
-  }
-  return context;
 };

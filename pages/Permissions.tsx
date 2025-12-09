@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { useLogistics } from '../context/LogisticsContext';
+import { useLogistics } from '../context/useLogistics';
 import { AVAILABLE_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS } from '../constants';
 import { Role } from '../types';
 import { Shield, Lock, Check, AlertTriangle } from 'lucide-react';

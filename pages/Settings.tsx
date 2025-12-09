@@ -1,6 +1,6 @@
 
 import React, { useState } from "react";
-import { useLogistics } from "../context/LogisticsContext";
+import { useLogistics } from '../context/useLogistics';
 import { LocationType, ItemType, Role } from "../types";
 import { Plus, Trash2, MapPin, Tag, Scale, Box, Lock, CreditCard, DollarSign, Building2, Coins, UserPlus, X } from "lucide-react";
 
@@ -8,6 +8,7 @@ export const Settings = () => {
   const {
     locations,
     addLocation,
+    removeLocation,
     categories,
     addCategory,
     measureUnits,
@@ -112,7 +113,7 @@ export const Settings = () => {
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!newUserName || !newUserEmail || !newUserPassword) {
       alert('Por favor preencha todos os campos obrigatórios:\n- Nome completo\n- Email\n- Senha (mínimo 8 caracteres)');
       return;
@@ -139,7 +140,7 @@ export const Settings = () => {
       setNewUserLocation("");
     } catch (error) {
       console.error('Erro ao criar utilizador:', error);
-      alert('Erro ao criar utilizador. Por favor tente novamente.');
+      alert(`Erro ao criar utilizador: ${(error as Error).message}`);
     }
   };
 
