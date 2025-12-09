@@ -8,6 +8,7 @@ import {
 } from '../types';
 // Removed demo constants imports (USERS, ITEMS, LOCATIONS, etc.)
 import { supabase } from '../services/supabaseClient';
+import subscribeToPublicTables from '../services/realtimeService';
 import createUserWithEdge from '../services/userService';
 import { DEFAULT_ROLE_PERMISSIONS } from '../constants';
 
@@ -584,6 +585,116 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     return () => clearInterval(intervalId);
   }, [items]);
+
+  // Real-time subscriptions: keep UI in sync when other users make changes.
+  useEffect(() => {
+    if (isLoadingUser) return; // wait until initial load completes
+
+    const unsubscribe = subscribeToPublicTables(supabase, async (payload: any) => {
+      // payload shape may vary between supabase versions; handle common properties
+      const table = payload.table || payload.table_name || payload?.schema?.table;
+      const eventType = payload.eventType || payload.event || payload.type || payload?.change?.event;
+      const record = payload.record || payload.new || payload.new_record || payload?.change?.new || payload?.after || payload.data;
+
+      // Debug
+      console.log('🔔 Realtime event', { table, eventType, record });
+
+      try {
+        if (table === 'inventory') {
+          const { data: inventoryData } = await supabase.from('inventory').select('*');
+          if (inventoryData) {
+            const mappedInventory = inventoryData.map((inv: any) => ({ itemId: inv.item_id, locationId: inv.location_id, quantity: inv.quantity }));
+            setInventory(mappedInventory);
+          }
+          return;
+        }
+
+        if (table === 'requisitions') {
+          const { data: requisitionsData } = await supabase
+            .from('requisitions')
+            .select(`*, logs:requisition_logs(*)`)
+            .order('created_at', { ascending: false });
+          if (requisitionsData) setRequisitions(requisitionsData.map((req: any) => ({ ...req, logs: req.logs || [] })));
+          return;
+        }
+
+        if (table === 'transactions') {
+          const { data: transactionsData } = await supabase
+            .from('transactions')
+            .select(`*, items:transaction_items(*)`)
+            .order('date', { ascending: false });
+          if (transactionsData) setTransactions(transactionsData.map(mapDbTransactionToApp));
+          return;
+        }
+
+        if (table === 'invoices') {
+          const { data: invoicesData } = await supabase
+            .from('invoices')
+            .select(`*, itens:invoice_items(*), pagamentos:invoice_payments(*)`)
+            .order('created_at', { ascending: false });
+          if (invoicesData) setInvoices(invoicesData.map((inv: any) => ({
+            id: inv.id,
+            numero: inv.numero,
+            tipo: inv.tipo,
+            status: inv.status,
+            locationId: inv.location_id,
+            empresa: { nome: inv.company_name, nuit: inv.company_nuit, endereco: inv.company_address, contacto: inv.company_contact },
+            cliente: { id: inv.client_id, nome: inv.client_name, nuit: inv.client_nuit, endereco: inv.client_address, contacto: inv.client_contact },
+            itens: (inv.itens || []).map((it: any) => ({ itemId: it.item_id, descricao: it.description, quantidade: it.quantity, precoUnitario: it.unit_price, impostoPercent: it.tax_percent })),
+            pagamentos: (inv.pagamentos || []).map((p: any) => ({ data: p.date, valor: p.amount, modalidade: p.method, referencia: p.reference })),
+            moeda: inv.currency,
+            dataEmissao: inv.issue_date,
+            vencimento: inv.due_date,
+            observacoes: inv.notes,
+            createdBy: inv.created_by
+          })));
+          return;
+        }
+
+        if (table === 'items') {
+          const { data: itemsData } = await supabase.from('items').select('*');
+          if (itemsData) setItems(itemsData);
+          return;
+        }
+
+        if (table === 'users') {
+          // If actor is admin, refresh all users; otherwise refresh current user only
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.user) return;
+
+          const actorId = session.user.id;
+          const { data: userData } = await supabase.from('users').select('*').eq('id', actorId).single();
+          if (userData) {
+            const mappedUser: User = {
+              id: userData.id,
+              name: userData.name,
+              role: userData.role,
+              locationId: userData.location_id || null,
+              jobTitle: userData.job_title,
+              defaultDailyGoal: userData.default_daily_goal,
+              dailyRate: userData.daily_rate,
+              halfDayRate: userData.half_day_rate,
+              absencePenalty: userData.absence_penalty,
+              bonusPerUnit: userData.bonus_per_unit
+            };
+            setCurrentUser(mappedUser);
+
+            if (mappedUser.role === Role.ADMIN || mappedUser.role === Role.GENERAL_MANAGER) {
+              const { data: usersData } = await supabase.from('users').select('*');
+              if (usersData) setAllUsers(usersData.map((u: any) => ({ id: u.id, name: u.name, role: u.role, locationId: u.location_id || null, jobTitle: u.job_title, defaultDailyGoal: u.default_daily_goal, dailyRate: u.daily_rate, halfDayRate: u.half_day_rate, absencePenalty: u.absence_penalty, bonusPerUnit: u.bonus_per_unit })));
+            }
+          }
+          return;
+        }
+      } catch (err) {
+        console.error('Erro ao processar evento realtime:', err);
+      }
+    });
+
+    return () => {
+      unsubscribe().catch(() => null);
+    };
+  }, [isLoadingUser]);
 
   const getSourceLocation = (targetLocId: string): string => {
     const target = locations.find(l => l.id === targetLocId);
