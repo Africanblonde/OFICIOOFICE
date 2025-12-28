@@ -2,6 +2,7 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { Invoice, InvoiceItem, InvoicePayment, DocumentType, InvoiceStatus, Client } from "../types";
 import { useLogistics } from '../context/useLogistics';
+import { formatFlexibleDate } from '../utils/dateFormatter';
 import { Printer, X, Plus, Save, Download, DollarSign, Search, User } from 'lucide-react';
 import PaymentModal from "./PaymentModal";
 
@@ -407,7 +408,7 @@ export default function InvoiceModal({ open, onClose, initial, onSave, companyDe
                 )}
                 {invoice.pagamentos.map((p, idx)=>(
                   <tr key={idx} className="border-b border-gray-50">
-                    <td className="p-2">{new Date(p.data).toLocaleString()}</td>
+                    <td className="p-2">{formatFlexibleDate(p.data, { time: true })}</td>
                     <td className="p-2">{p.modalidade}</td>
                     <td className="p-2">{p.referencia ?? "-"}</td>
                     <td className="p-2 text-right font-medium text-green-600">{p.valor.toFixed(2)} {invoice.moeda}</td>

@@ -4,7 +4,8 @@ import {
   User, Item, Location, InventoryRecord, Requisition, Role, RequestStatus, LocationType, LogEntry,
   DailyPerformance, AttendanceStatus, ItemCondition, ItemType, ItemTypeDefinition, AccountingEntry,
   Transaction, CartItem, TransactionType, PaymentMethod, RolePermissions, AppPermission, PayrollRecord,
-  Invoice, InvoiceItem, InvoicePayment, DocumentType, InvoiceStatus, Client, CompanyInfo
+  Invoice, InvoiceItem, InvoicePayment, DocumentType, InvoiceStatus, Client, CompanyInfo,
+  RequisitionSheet, RequisitionSheetItem
 } from '../types';
 // Removed demo constants imports (USERS, ITEMS, LOCATIONS, etc.)
 import { supabase } from '../services/supabaseClient';
@@ -19,6 +20,7 @@ interface LogisticsContextType {
   locations: Location[];
   inventory: InventoryRecord[];
   requisitions: Requisition[];
+  requisitionSheets: RequisitionSheet[]; // NEW
   performanceRecords: DailyPerformance[];
   accountingEntries: AccountingEntry[];
   logEntries: LogEntry[];
@@ -46,7 +48,10 @@ interface LogisticsContextType {
 
   setSelectedDepartmentId: (id: string | null) => void;
   createRequisition: (itemId: string, qty: number, condition: ItemCondition, customTargetLocationId?: string) => void;
+  createRequisitionSheet: (targetLocationId: string, items: { itemId?: string, itemName: string, quantity: number, unit: string, condition: ItemCondition, notes?: string }[], notes?: string) => Promise<void>;
   updateRequisitionStatus: (reqId: string, newStatus: RequestStatus) => void;
+  updateRequisitionSheetStatus: (sheetId: string, newStatus: RequestStatus) => Promise<void>;
+  updateRequisitionSheetItemDelivery: (itemId: string, isDelivered: boolean) => Promise<void>;
   getInventoryByLocation: (locationId: string) => InventoryRecord[];
   getItemName: (itemId: string) => string;
   getLocationName: (locationId: string) => string;
@@ -111,6 +116,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [locations, setLocations] = useState<Location[]>([]);
   const [inventory, setInventory] = useState<InventoryRecord[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
+  const [requisitionSheets, setRequisitionSheets] = useState<RequisitionSheet[]>([]);
   const [performanceRecords, setPerformanceRecords] = useState<DailyPerformance[]>([]);
   const [accountingEntries, setAccountingEntries] = useState<AccountingEntry[]>([]);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]); // Added missing state
@@ -322,6 +328,44 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           logs: req.logs || []
         }));
         setRequisitions(mappedRequisitions);
+        setRequisitions(mappedRequisitions);
+      }
+
+      // Fetch Requisition Sheets (New System)
+      const { data: sheetsData } = await supabase
+        .from('requisition_sheets')
+        .select(`
+          *,
+          items:requisition_sheet_items(*)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (sheetsData) {
+        const mappedSheets: RequisitionSheet[] = sheetsData.map(sheet => ({
+          id: sheet.id,
+          requisitionNumber: sheet.requisition_number,
+          requesterId: sheet.requester_id,
+          sourceLocationId: sheet.source_location_id,
+          sourceLocationName: sheet.source_location_name,
+          targetLocationId: sheet.target_location_id,
+          targetLocationName: sheet.target_location_name,
+          status: sheet.status,
+          notes: sheet.notes,
+          createdAt: sheet.created_at,
+          updatedAt: sheet.updated_at,
+          items: (sheet.items || []).map((it: any) => ({
+            id: it.id,
+            sheetId: it.sheet_id,
+            itemId: it.item_id,
+            itemName: it.item_name,
+            quantity: it.quantity,
+            unit: it.unit,
+            condition: it.condition,
+            isDelivered: it.is_delivered,
+            notes: it.notes
+          }))
+        }));
+        setRequisitionSheets(mappedSheets);
       }
 
       // Fetch daily performance
@@ -566,9 +610,42 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
             setAllUsers(mappedUsers);
           }
         } else {
-          console.log('👤 Usuário é comum, apenas seu próprio perfil será exibido');
-          // Ensure non-admins do not keep a large allUsers list
+          // If not admin/GM, only show own user in allUsers
           setAllUsers([mappedUser]);
+        }
+
+        // Fetch Requisition Sheets
+        const { data: sheetsData } = await supabase
+          .from('requisition_sheets')
+          .select(`*, items:requisition_sheet_items(*)`)
+          .order('created_at', { ascending: false });
+
+        if (sheetsData) {
+          const mappedSheets: RequisitionSheet[] = sheetsData.map(sheet => ({
+            id: sheet.id,
+            requisitionNumber: sheet.requisition_number,
+            requesterId: sheet.requester_id,
+            sourceLocationId: sheet.source_location_id,
+            sourceLocationName: sheet.source_location_name,
+            targetLocationId: sheet.target_location_id,
+            targetLocationName: sheet.target_location_name,
+            status: sheet.status,
+            notes: sheet.notes,
+            createdAt: sheet.created_at,
+            updatedAt: sheet.updated_at,
+            items: (sheet.items || []).map((it: any) => ({
+              id: it.id,
+              sheetId: it.sheet_id,
+              itemId: it.item_id,
+              itemName: it.item_name,
+              quantity: it.quantity,
+              unit: it.unit,
+              condition: it.condition,
+              isDelivered: it.is_delivered,
+              notes: it.notes
+            }))
+          }));
+          setRequisitionSheets(mappedSheets);
         }
       } else if (error) {
         console.error('❌ Erro ao buscar dados do usuário:', error);
@@ -615,6 +692,43 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
             .select(`*, logs:requisition_logs(*)`)
             .order('created_at', { ascending: false });
           if (requisitionsData) setRequisitions(requisitionsData.map((req: any) => ({ ...req, logs: req.logs || [] })));
+          return;
+        }
+
+        if (table === 'requisition_sheets' || table === 'requisition_sheet_items') {
+          // Re-fetch sheets
+          const { data: sheetsData } = await supabase
+            .from('requisition_sheets')
+            .select(`*, items:requisition_sheet_items(*)`)
+            .order('created_at', { ascending: false });
+
+          if (sheetsData) {
+            const mappedSheets: RequisitionSheet[] = sheetsData.map(sheet => ({
+              id: sheet.id,
+              requisitionNumber: sheet.requisition_number,
+              requesterId: sheet.requester_id,
+              sourceLocationId: sheet.source_location_id,
+              sourceLocationName: sheet.source_location_name,
+              targetLocationId: sheet.target_location_id,
+              targetLocationName: sheet.target_location_name,
+              status: sheet.status,
+              notes: sheet.notes,
+              createdAt: sheet.created_at,
+              updatedAt: sheet.updated_at,
+              items: (sheet.items || []).map((it: any) => ({
+                id: it.id,
+                sheetId: it.sheet_id,
+                itemId: it.item_id,
+                itemName: it.item_name,
+                quantity: it.quantity,
+                unit: it.unit,
+                condition: it.condition,
+                isDelivered: it.is_delivered,
+                notes: it.notes
+              }))
+            }));
+            setRequisitionSheets(mappedSheets);
+          }
           return;
         }
 
@@ -749,6 +863,59 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
 
     showNotification("Requisição criada com sucesso!");
+  };
+
+  const createRequisitionSheet = async (targetLocationId: string, itemsList: { itemId?: string, itemName: string, quantity: number, unit: string, condition: ItemCondition, notes?: string }[], notes?: string) => {
+    if (!currentUser) return;
+
+    const sourceId = getSourceLocation(targetLocationId);
+
+    // Generate simplified ID (Mock) - Trigger handles this ideally or we generate UUID
+    // In real app, DB trigger handles REQ-YYYY/NNN
+
+    // 1. Create Sheet
+    const { data: sheetData, error: sheetError } = await supabase
+      .from('requisition_sheets')
+      .insert({
+        requester_id: currentUser.id,
+        source_location_id: sourceId,
+        source_location_name: getLocationName(sourceId),
+        target_location_id: targetLocationId,
+        target_location_name: getLocationName(targetLocationId),
+        status: RequestStatus.PENDING,
+        notes,
+        requisition_number: `REQ-${new Date().getFullYear()}/${Math.floor(Math.random() * 10000)}` // Temp number until DB trigger
+      })
+      .select()
+      .single();
+
+    if (sheetError) {
+      showNotification(`Erro ao criar requisição: ${sheetError.message}`);
+      return;
+    }
+
+    // 2. Create Items
+    const itemsToInsert = itemsList.map(it => ({
+      sheet_id: sheetData.id,
+      item_id: it.itemId || null,
+      item_name: it.itemName,
+      quantity: it.quantity,
+      unit: it.unit,
+      condition: it.condition || ItemCondition.NEW,
+      notes: it.notes
+    }));
+
+    const { error: itemsError } = await supabase
+      .from('requisition_sheet_items')
+      .insert(itemsToInsert);
+
+    if (itemsError) {
+      showNotification(`Erro ao adicionar itens: ${itemsError.message}`);
+      // Ideally rollback sheet here
+    } else {
+      showNotification("Requisição criada com sucesso!");
+      refreshData();
+    }
   };
 
   const updateRequisitionStatus = async (reqId: string, newStatus: RequestStatus) => {
@@ -939,6 +1106,46 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     // Update local state
     setItems(prev => prev.filter(i => i.id !== itemId));
     showNotification(`✅ Item apagado com sucesso.`);
+  };
+
+
+
+  const updateRequisitionSheetStatus = async (sheetId: string, newStatus: RequestStatus) => {
+    if (!currentUser) return;
+
+    const { error } = await supabase
+      .from('requisition_sheets')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', sheetId);
+
+    if (error) {
+      showNotification(`Erro ao atualizar status: ${error.message}`);
+      return;
+    }
+
+    // Local state update (optimistic or wait for reload)
+    setRequisitionSheets(prev => prev.map(s => s.id === sheetId ? { ...s, status: newStatus } : s));
+    showNotification(`Status da requisição atualizado para ${newStatus}.`);
+  };
+
+  const updateRequisitionSheetItemDelivery = async (itemId: string, isDelivered: boolean) => {
+    if (!currentUser) return;
+
+    const { error } = await supabase
+      .from('requisition_sheet_items')
+      .update({ is_delivered: isDelivered })
+      .eq('id', itemId);
+
+    if (error) {
+      showNotification(`Erro ao atualizar entrega do item: ${error.message}`);
+      return;
+    }
+
+    // Local state update
+    setRequisitionSheets(prev => prev.map(sheet => ({
+      ...sheet,
+      items: sheet.items.map(it => it.id === itemId ? { ...it, isDelivered: isDelivered } : it)
+    })));
   };
 
   const getInventoryByLocation = (locationId: string) => {
@@ -1958,12 +2165,16 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   return (
     <LogisticsContext.Provider value={{
-      currentUser, allUsers, items, locations, inventory, requisitions, performanceRecords, accountingEntries, transactions, invoices, clients, logEntries,
+      currentUser, allUsers, items, locations, inventory, requisitions, requisitionSheets, performanceRecords, accountingEntries, transactions, invoices, clients, logEntries,
       selectedDepartmentId, lastUpdated, notification, isAdminOrGM,
       categories, measureUnits, itemTypes, rolePermissions,
       paymentMethods, expenseCategories, companyInfo, availableCurrencies, defaultCurrency,
       payrollParams,
-      setSelectedDepartmentId, createRequisition, updateRequisitionStatus,
+      setSelectedDepartmentId, createRequisition,
+      createRequisitionSheet,
+      updateRequisitionStatus,
+      updateRequisitionSheetStatus,
+      updateRequisitionSheetItemDelivery,
       getInventoryByLocation, getItemName, getLocationName, savePerformanceRecord, getWorkersByManager,
       getWorkersByLocation, refreshData, registerNewItem, addToInventory, deleteItem,
       addUser, updateUser, deleteUser, addLocation, removeLocation, addCategory, addMeasureUnit, addItemType,

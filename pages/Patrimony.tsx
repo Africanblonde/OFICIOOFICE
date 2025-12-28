@@ -2,6 +2,7 @@
 import React from 'react';
 import { useLogistics } from '../context/useLogistics';
 import { ItemType, LocationType } from '../types';
+import { formatFlexibleDate } from '../utils/dateFormatter';
 import { Landmark, TrendingUp, DollarSign, PieChart, FileText, ArrowUpRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, Cell, PieChart as RePieChart, Pie } from 'recharts';
 
@@ -182,7 +183,7 @@ export const Patrimony = () => {
                  ) : (
                      accountingEntries.map(entry => (
                         <tr key={entry.id} className="hover:bg-slate-50">
-                           <td className="px-6 py-4 text-gray-600">{new Date(entry.date).toLocaleDateString()}</td>
+                           <td className="px-6 py-4 text-gray-600">{formatFlexibleDate(entry.date, { dateOnly: true })}</td>
                            <td className="px-6 py-4 font-medium text-gray-800">{entry.itemName}</td>
                            <td className="px-6 py-4">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${entry.type === 'ATIVO' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-purple-50 text-purple-600 border-purple-200'}`}>

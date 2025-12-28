@@ -11,7 +11,7 @@ export function subscribeToPublicTables(supabase: SupabaseClient, onChange: (pay
   const channel = supabase.channel('public-all-changes');
 
   // Subscribe to changes for a set of tables. Using event='*' will get INSERT/UPDATE/DELETE
-  const tables = ['inventory', 'requisitions', 'transactions', 'invoices', 'items', 'users'];
+  const tables = ['inventory', 'requisitions', 'transactions', 'invoices', 'items', 'users', 'requisition_sheets', 'requisition_sheet_items'];
 
   for (const table of tables) {
     channel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {

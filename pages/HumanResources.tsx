@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useLogistics } from '../context/useLogistics';
 import { Role, User, AttendanceStatus, DailyPerformance } from '../types';
+import { formatFlexibleDate } from '../utils/dateFormatter';
 import {
     UserPlus, Users, Briefcase, MapPin, Search, X,
     Calendar, DollarSign, TrendingUp, Clock, Settings, FileText,
@@ -273,7 +274,7 @@ export const HumanResources = () => {
                         <div key={r.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg shadow-sm hover:border-blue-200 transition">
                             <div className="flex items-center gap-3">
                                 <div className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded border border-gray-200">
-                                    {new Date(r.date).toLocaleDateString()}
+                                    {formatFlexibleDate(r.date, { dateOnly: true })}
                                 </div>
                                 <div className={`text-xs font-bold px-2 py-0.5 rounded uppercase w-10 text-center ${r.status === 'D' ? 'bg-green-100 text-green-700' :
                                     r.status === 'D/2' ? 'bg-orange-100 text-orange-700' :

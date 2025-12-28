@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useLogistics } from '../context/useLogistics';
 import { RequestStatus, Role, ItemType, ItemCondition } from '../types';
+import { formatFlexibleDate } from '../utils/dateFormatter';
 import {
   CheckCircle,
   XCircle,
@@ -19,12 +20,29 @@ import {
   Lock,
   MapPin,
   Calendar,
-  X
+  X,
+  FileText
 } from 'lucide-react';
+import { RequisitionForm } from './RequisitionForm';
+import { RequisitionPrintView } from '../components/RequisitionPrintView';
+import { RequisitionSheet } from '../types';
 
 export const Requisitions = () => {
-  const { requisitions, currentUser, items, locations, getItemName, getLocationName, createRequisition, updateRequisitionStatus, isAdminOrGM } = useLogistics();
+  const {
+    requisitions, requisitionSheets, currentUser, items, locations,
+    getItemName, getLocationName, createRequisition, updateRequisitionStatus,
+    updateRequisitionSheetStatus, updateRequisitionSheetItemDelivery,
+    isAdminOrGM, companyInfo
+  } = useLogistics();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'form'>('list');
+  const [activeTab, setActiveTab] = useState<'single' | 'sheets'>('single');
+  const [selectedSheetToPrint, setSelectedSheetToPrint] = useState<RequisitionSheet | null>(null);
+  const [expandedSheetId, setExpandedSheetId] = useState<string | null>(null);
+
+  if (viewMode === 'form') {
+    return <RequisitionForm onCancel={() => setViewMode('list')} onSuccess={() => setViewMode('list')} />;
+  }
 
   // State for expand/collapse rows
   const [expandedReqId, setExpandedReqId] = useState<string | null>(null);
@@ -54,6 +72,21 @@ export const Requisitions = () => {
     }
     // Workers
     return req.targetLocationId === currentUser?.locationId || req.requesterId === currentUser?.id;
+    // Workers
+    return req.targetLocationId === currentUser?.locationId || req.requesterId === currentUser?.id;
+  });
+
+  const myReqSheets = (requisitionSheets || []).filter(sheet => {
+    if (isAdminOrGM) return true;
+    if (currentUser?.role === Role.MANAGER) {
+      const isParentOfSource = locations.find(l => l.id === sheet.sourceLocationId)?.parentId === currentUser.locationId;
+      const isParentOfTarget = locations.find(l => l.id === sheet.targetLocationId)?.parentId === currentUser.locationId;
+
+      return sheet.sourceLocationId === currentUser.locationId ||
+        sheet.targetLocationId === currentUser.locationId ||
+        isParentOfSource || isParentOfTarget;
+    }
+    return sheet.targetLocationId === currentUser?.locationId || sheet.requesterId === currentUser?.id;
   });
 
   const toggleExpand = (reqId: string) => {
@@ -205,238 +238,431 @@ export const Requisitions = () => {
           <p className="text-sm text-gray-500">Gerencie a entrada e saída de materiais.</p>
         </div>
         {currentUser?.role !== Role.ADMIN && currentUser?.role !== Role.GENERAL_MANAGER && (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-3 md:py-2 rounded-lg hover:bg-blue-700 transition shadow-md w-full md:w-auto justify-center font-medium"
-          >
-            <Plus size={18} /> Nova Requisição
-          </button>
+          <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-3 md:py-2 rounded-lg hover:bg-blue-700 transition shadow-md w-full md:w-auto justify-center font-medium"
+            >
+              <Plus size={18} /> Nova Requisição (Simples)
+            </button>
+            <button
+              onClick={() => setViewMode('form')}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-3 md:py-2 rounded-lg hover:bg-indigo-700 transition shadow-md w-full md:w-auto justify-center font-medium"
+            >
+              <FileText size={18} /> Nova Requisição (Múltipla)
+            </button>
+          </div>
         )}
       </div>
 
-      {/* DESKTOP TABLE VIEW */}
-      <div className="hidden md:block bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap w-8"></th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Item / Condição</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Origem <ArrowRight size={10} className="inline mx-1" /> Destino</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Qtd</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Status</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Data</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase text-right whitespace-nowrap">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {myRequisitions.length === 0 ? (
-                <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-400">Nenhuma requisição encontrada.</td></tr>
-              ) : (
-                myRequisitions.map((req) => {
-                  const item = items.find(i => i.id === req.itemId);
-                  const isExpanded = expandedReqId === req.id;
+      {/* TABS */}
+      <div className="flex gap-4 mb-4 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('single')}
+          className={`pb-2 px-1 text-sm font-medium ${activeTab === 'single' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Requisições Individuais (Legado)
+        </button>
+        <button
+          onClick={() => setActiveTab('sheets')}
+          className={`pb-2 px-1 text-sm font-medium ${activeTab === 'sheets' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+        >
+          Fichas de Requisição (Múltiplos Itens)
+        </button>
+      </div>
 
-                  return (
-                    <React.Fragment key={req.id}>
-                      <tr
-                        onClick={() => toggleExpand(req.id)}
-                        className={`hover:bg-slate-50 transition cursor-pointer ${isExpanded ? 'bg-slate-50' : ''}`}
-                      >
-                        <td className="px-6 py-4 text-center">
-                          {isExpanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="font-medium text-gray-900 flex items-center gap-2">
-                            {item?.name}
-                            {getItemTypeBadge(item)}
-                          </div>
-                          <div className="text-xs text-gray-500 flex items-center gap-2 mt-1">
-                            <span>ID: {req.id}</span>
-                            {item?.type === ItemType.ASSET && getConditionBadge(req.condition)}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
-                          <div className="flex flex-col">
-                            <span className="text-xs text-gray-400">De: {getLocationName(req.sourceLocationId)}</span>
-                            <span className="font-medium text-gray-800">Para: {getLocationName(req.targetLocationId)}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap">
-                          {req.quantity} un
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {getStatusBadge(req.status)}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
-                          {new Date(req.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                          {renderActions(req)}
-                        </td>
-                      </tr>
-                      {/* Expandable History Log */}
-                      {isExpanded && (
-                        <tr className="bg-slate-50 border-b border-gray-100">
-                          <td colSpan={7} className="px-6 py-4">
-                            <div className="bg-white rounded-lg border border-gray-200 p-4">
-                              <h4 className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2 mb-3">
-                                <History size={14} /> Histórico de Rastreabilidade
-                              </h4>
-                              <div className="space-y-4 relative pl-2">
-                                <div className="absolute left-3.5 top-2 bottom-2 w-0.5 bg-gray-100"></div>
-                                {req.logs.map((log, idx) => (
-                                  <div key={idx} className="relative flex gap-4 text-sm">
-                                    <div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-white shadow-sm z-10 mt-1 shrink-0"></div>
-                                    <div>
-                                      <p className="font-medium text-gray-800">{log.message}</p>
-                                      <p className="text-xs text-gray-400">
-                                        {new Date(log.timestamp).toLocaleString()} • {log.actorId} ({log.action})
-                                      </p>
-                                    </div>
-                                  </div>
-                                ))}
+      {activeTab === 'single' ? (
+        <>
+          {/* DESKTOP TABLE VIEW */}
+          <div className="hidden md:block bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
+            {/* ... existing table ... */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap w-8"></th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Item / Condição</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Origem <ArrowRight size={10} className="inline mx-1" /> Destino</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Qtd</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Status</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Data</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase text-right whitespace-nowrap">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {myRequisitions.length === 0 ? (
+                    <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-400">Nenhuma requisição encontrada.</td></tr>
+                  ) : (
+                    myRequisitions.map((req) => {
+                      const item = items.find(i => i.id === req.itemId);
+                      const isExpanded = expandedReqId === req.id;
+
+                      return (
+                        <React.Fragment key={req.id}>
+                          <tr
+                            onClick={() => toggleExpand(req.id)}
+                            className={`hover:bg-slate-50 transition cursor-pointer ${isExpanded ? 'bg-slate-50' : ''}`}
+                          >
+                            <td className="px-6 py-4 text-center">
+                              {isExpanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="font-medium text-gray-900 flex items-center gap-2">
+                                {item?.name}
+                                {getItemTypeBadge(item)}
                               </div>
+                              <div className="text-xs text-gray-500 flex items-center gap-2 mt-1">
+                                <span>ID: {req.id}</span>
+                                {item?.type === ItemType.ASSET && getConditionBadge(req.condition)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-400">De: {getLocationName(req.sourceLocationId)}</span>
+                                <span className="font-medium text-gray-800">Para: {getLocationName(req.targetLocationId)}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm font-semibold text-gray-900 whitespace-nowrap">
+                              {req.quantity} un
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {getStatusBadge(req.status)}
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                              {formatFlexibleDate(req.createdAt, { dateOnly: true })}
+                            </td>
+                            <td className="px-6 py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                              {renderActions(req)}
+                            </td>
+                          </tr>
+                          {/* Expandable History Log */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50 border-b border-gray-100">
+                              <td colSpan={7} className="px-6 py-4">
+                                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                  <h4 className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2 mb-3">
+                                    <History size={14} /> Histórico de Rastreabilidade
+                                  </h4>
+                                  <div className="space-y-4 relative pl-2">
+                                    <div className="absolute left-3.5 top-2 bottom-2 w-0.5 bg-gray-100"></div>
+                                    {req.logs.map((log, idx) => (
+                                      <div key={idx} className="relative flex gap-4 text-sm">
+                                        <div className="w-3 h-3 rounded-full bg-blue-50 border-2 border-white shadow-sm z-10 mt-1 shrink-0"></div>
+                                        <div>
+                                          <p className="font-medium text-gray-800">{log.message}</p>
+                                          <p className="text-xs text-gray-400">
+                                            {formatFlexibleDate(log.timestamp, { time: true })} • {log.actorId || 'Sistema'} ({log.action})
+                                          </p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div >
+
+          {/* MOBILE CARD VIEW */}
+          < div className="md:hidden space-y-4" >
+            {
+              myRequisitions.length === 0 && (
+                <div className="text-center p-8 bg-white rounded-xl border border-gray-200 text-gray-400">
+                  <Box size={40} className="mx-auto mb-2 opacity-20" />
+                  <p>Nenhuma requisição.</p>
+                </div>
+              )
+            }
+            {
+              myRequisitions.map((req) => {
+                const item = items.find(i => i.id === req.itemId);
+                return (
+                  <div key={req.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <span className="text-[10px] text-gray-400 font-mono block mb-1">#{req.id.slice(-6)}</span>
+                        <h4 className="font-bold text-gray-900 text-lg leading-tight">{item?.name}</h4>
+                      </div>
+                      {getStatusBadge(req.status)}
+                    </div>
+
+                    <div className="flex gap-2 mb-3">
+                      {getItemTypeBadge(item)}
+                      {item?.type === ItemType.ASSET && getConditionBadge(req.condition)}
+                      <span className="text-[10px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{req.quantity} un</span>
+                    </div>
+
+                    <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm space-y-2 mb-4">
+                      <div className="flex items-center gap-2">
+                        <MapPin size={14} className="text-gray-400" />
+                        <span className="text-gray-500 text-xs">De:</span>
+                        <span className="font-medium text-gray-800">{getLocationName(req.sourceLocationId)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin size={14} className="text-blue-500" />
+                        <span className="text-gray-500 text-xs">Para:</span>
+                        <span className="font-bold text-gray-900">{getLocationName(req.targetLocationId)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 border-t border-gray-100 pt-2 mt-1">
+                        <Calendar size={14} className="text-gray-400" />
+                        <span className="text-xs text-gray-500">{formatFlexibleDate(req.createdAt, { dateOnly: true })}</span>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons Full Width */}
+                    <div className="border-t border-gray-100 pt-3">
+                      {renderActions(req, true)}
+                    </div>
+                  </div>
+                );
+              })
+            }
+          </div >
+        </>
+      ) : (
+        <div className="bg-white rounded-xl shadow border border-gray-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Nº Requisição</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Origem / Destino</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Itens</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Status</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase whitespace-nowrap">Data</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {myReqSheets.length === 0 ? (
+                  <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400">Nenhuma ficha de requisição encontrada.</td></tr>
+                ) : (
+                  myReqSheets.map(sheet => {
+                    const isExpanded = expandedSheetId === sheet.id;
+                    const isSourceManager = currentUser?.role === Role.MANAGER && (sheet.sourceLocationId === currentUser.locationId || locations.find(l => l.id === sheet.sourceLocationId)?.parentId === currentUser.locationId);
+                    const isTargetManager = currentUser?.role === Role.MANAGER && (sheet.targetLocationId === currentUser.locationId || locations.find(l => l.id === sheet.targetLocationId)?.parentId === currentUser.locationId);
+                    const hasAuthority = isAdminOrGM || isSourceManager || isTargetManager;
+
+                    return (
+                      <React.Fragment key={sheet.id}>
+                        <tr
+                          className={`hover:bg-slate-50 transition cursor-pointer ${isExpanded ? 'bg-slate-50' : ''}`}
+                          onClick={() => setExpandedSheetId(isExpanded ? null : sheet.id)}
+                        >
+                          <td className="px-6 py-4 font-mono text-sm font-medium text-gray-700">
+                            <div className="flex items-center gap-2">
+                              {isExpanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+                              {sheet.requisitionNumber || 'N/A'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm whitespace-nowrap">
+                            <div className="flex flex-col">
+                              <span className="text-xs text-gray-400">De: {sheet.sourceLocationName}</span>
+                              <span className="font-medium text-gray-800">Para: {sheet.targetLocationName}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm font-semibold text-gray-900">
+                            {sheet.items?.length || 0} itens
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {getStatusBadge(sheet.status)}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                            {formatFlexibleDate(sheet.createdAt, { dateOnly: true })}
+                          </td>
+                          <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex justify-end gap-2">
+                              {sheet.status === RequestStatus.PENDING && hasAuthority && (
+                                <>
+                                  <button
+                                    onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.APPROVED)}
+                                    className="p-1 px-2 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-700"
+                                  >
+                                    Aprovar
+                                  </button>
+                                  <button
+                                    onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.REJECTED)}
+                                    className="p-1 px-2 text-[10px] font-bold bg-white text-red-600 border border-red-200 rounded hover:bg-red-50"
+                                  >
+                                    Rejeitar
+                                  </button>
+                                </>
+                              )}
+                              {sheet.status === RequestStatus.APPROVED && (isAdminOrGM || isSourceManager) && (
+                                <button
+                                  onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.IN_TRANSIT)}
+                                  className="p-1 px-2 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700 flex items-center gap-1"
+                                >
+                                  <Truck size={10} /> Despachar
+                                </button>
+                              )}
+                              {sheet.status === RequestStatus.IN_TRANSIT && (isAdminOrGM || isTargetManager) && (
+                                <button
+                                  onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.DELIVERED)}
+                                  className="p-1 px-2 text-[10px] font-bold bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-1"
+                                >
+                                  <Truck size={10} /> Registrar Chegada
+                                </button>
+                              )}
+                              {sheet.status === RequestStatus.DELIVERED && (isAdminOrGM || isTargetManager) && (
+                                <button
+                                  onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.CONFIRMED)}
+                                  className="p-1 px-2 text-[10px] font-bold bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"
+                                >
+                                  <PackageCheck size={10} /> Aceitar
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setSelectedSheetToPrint(sheet)}
+                                className="text-gray-400 hover:text-blue-600 p-1"
+                                title="Imprimir"
+                              >
+                                <FileText size={18} />
+                              </button>
                             </div>
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* MOBILE CARD VIEW */}
-      <div className="md:hidden space-y-4">
-        {myRequisitions.length === 0 && (
-          <div className="text-center p-8 bg-white rounded-xl border border-gray-200 text-gray-400">
-            <Box size={40} className="mx-auto mb-2 opacity-20" />
-            <p>Nenhuma requisição.</p>
-          </div>
-        )}
-        {myRequisitions.map((req) => {
-          const item = items.find(i => i.id === req.itemId);
-          return (
-            <div key={req.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <span className="text-[10px] text-gray-400 font-mono block mb-1">#{req.id.slice(-6)}</span>
-                  <h4 className="font-bold text-gray-900 text-lg leading-tight">{item?.name}</h4>
-                </div>
-                {getStatusBadge(req.status)}
-              </div>
-
-              <div className="flex gap-2 mb-3">
-                {getItemTypeBadge(item)}
-                {item?.type === ItemType.ASSET && getConditionBadge(req.condition)}
-                <span className="text-[10px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{req.quantity} un</span>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm space-y-2 mb-4">
-                <div className="flex items-center gap-2">
-                  <MapPin size={14} className="text-gray-400" />
-                  <span className="text-gray-500 text-xs">De:</span>
-                  <span className="font-medium text-gray-800">{getLocationName(req.sourceLocationId)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin size={14} className="text-blue-500" />
-                  <span className="text-gray-500 text-xs">Para:</span>
-                  <span className="font-bold text-gray-900">{getLocationName(req.targetLocationId)}</span>
-                </div>
-                <div className="flex items-center gap-2 border-t border-gray-100 pt-2 mt-1">
-                  <Calendar size={14} className="text-gray-400" />
-                  <span className="text-xs text-gray-500">{new Date(req.createdAt).toLocaleDateString()}</span>
-                </div>
-              </div>
-
-              {/* Action Buttons Full Width */}
-              <div className="border-t border-gray-100 pt-3">
-                {renderActions(req, true)}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-end md:items-center justify-center z-50 p-0 md:p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-t-2xl md:rounded-xl shadow-2xl w-full max-w-md p-6 animate-in slide-in-from-bottom-10 md:slide-in-from-bottom-4 duration-200">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Nova Requisição</h3>
-              <button onClick={() => setIsModalOpen(false)} className="bg-gray-100 p-1 rounded-full" title="Fechar" aria-label="Fechar"><X size={20} className="text-gray-500" /></button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Item Necessário</label>
-                <select
-                  className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-gray-900 text-base"
-                  value={selectedItem}
-                  onChange={(e) => setSelectedItem(e.target.value)}
-                >
-                  {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-                </select>
-                {selectedItemObj && (
-                  <div className="mt-2">
-                    {getItemTypeBadge(selectedItemObj)}
-                  </div>
+                        {isExpanded && (
+                          <tr className="bg-slate-50">
+                            <td colSpan={6} className="px-6 py-4">
+                              <div className="bg-white rounded-lg border border-gray-200 p-4">
+                                <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
+                                  <Box size={14} /> Detalhes dos Itens e Entrega
+                                </h4>
+                                <div className="space-y-2">
+                                  {sheet.items.map(item => (
+                                    <div key={item.id} className="flex items-center justify-between p-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 rounded">
+                                      <div className="flex items-center gap-3">
+                                        <input
+                                          type="checkbox"
+                                          checked={item.isDelivered}
+                                          onChange={(e) => updateRequisitionSheetItemDelivery(item.id, e.target.checked)}
+                                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                          disabled={sheet.status === RequestStatus.CONFIRMED}
+                                        />
+                                        <div>
+                                          <p className={`text-sm font-medium ${item.isDelivered ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{item.itemName}</p>
+                                          <p className="text-[10px] text-gray-500">{item.quantity} {item.unit} • {item.condition}</p>
+                                        </div>
+                                      </div>
+                                      {item.notes && <p className="text-[10px] text-gray-400 italic">"{item.notes}"</p>}
+                                    </div>
+                                  ))}
+                                </div>
+                                {sheet.notes && (
+                                  <div className="mt-4 p-3 bg-yellow-50 rounded border border-yellow-100 italic text-xs text-gray-600">
+                                    <strong>Notas:</strong> {sheet.notes}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
                 )}
-              </div>
-
-              {selectedItemObj?.type === ItemType.ASSET && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Condição Desejada</label>
-                  <select
-                    className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-gray-900 text-base"
-                    value={condition}
-                    onChange={(e) => setCondition(e.target.value as ItemCondition)}
-                  >
-                    <option value={ItemCondition.NEW}>Novo</option>
-                    <option value={ItemCondition.GOOD}>Bom Estado (Usado)</option>
-                    <option value={ItemCondition.FAIR}>Qualquer um (Funcional)</option>
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
-                <input
-                  type="number"
-                  min="1"
-                  className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-gray-900 text-lg font-bold"
-                  value={quantity}
-                  onChange={(e) => setQuantity(parseInt(e.target.value))}
-                />
-              </div>
-
-              <div className="bg-blue-50 p-4 rounded-xl text-sm text-blue-800 border border-blue-100">
-                <p>A requisição será enviada para aprovação do <strong>Gerente Regional</strong> ou <strong>Administração</strong>.</p>
-              </div>
-
-              <div className="flex gap-3 mt-6 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-bold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 text-sm font-bold shadow-md"
-                >
-                  Confirmar Envio
-                </button>
-              </div>
-            </form>
+              </tbody>
+            </table>
           </div>
         </div>
       )}
-    </div>
+
+      {selectedSheetToPrint && (
+        <RequisitionPrintView
+          sheet={selectedSheetToPrint}
+          companyInfo={companyInfo}
+          onClose={() => setSelectedSheetToPrint(null)}
+        />
+      )}
+
+      {/* Modal */}
+      {
+        isModalOpen && (
+          <div className="fixed inset-0 bg-black/60 flex items-end md:items-center justify-center z-50 p-0 md:p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-t-2xl md:rounded-xl shadow-2xl w-full max-w-md p-6 animate-in slide-in-from-bottom-10 md:slide-in-from-bottom-4 duration-200">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-900">Nova Requisição</h3>
+                <button onClick={() => setIsModalOpen(false)} className="bg-gray-100 p-1 rounded-full" title="Fechar" aria-label="Fechar"><X size={20} className="text-gray-500" /></button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="item-select" className="block text-sm font-medium text-gray-700 mb-1">Item Necessário</label>
+                  <select
+                    id="item-select"
+                    className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-gray-900 text-base"
+                    value={selectedItem}
+                    onChange={(e) => setSelectedItem(e.target.value)}
+                  >
+                    {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  </select>
+                  {selectedItemObj && (
+                    <div className="mt-2">
+                      {getItemTypeBadge(selectedItemObj)}
+                    </div>
+                  )}
+                </div>
+
+                {selectedItemObj?.type === ItemType.ASSET && (
+                  <div>
+                    <label htmlFor="condition-select" className="block text-sm font-medium text-gray-700 mb-1">Condição Desejada</label>
+                    <select
+                      id="condition-select"
+                      className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-gray-900 text-base"
+                      value={condition}
+                      onChange={(e) => setCondition(e.target.value as ItemCondition)}
+                    >
+                      <option value={ItemCondition.NEW}>Novo</option>
+                      <option value={ItemCondition.GOOD}>Bom Estado (Usado)</option>
+                      <option value={ItemCondition.FAIR}>Qualquer um (Funcional)</option>
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label htmlFor="quantity-input" className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
+                  <input
+                    id="quantity-input"
+                    type="number"
+                    min="1"
+                    className="w-full border border-gray-300 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-gray-900 text-lg font-bold"
+                    value={quantity}
+                    onChange={(e) => setQuantity(parseInt(e.target.value))}
+                  />
+                </div>
+
+                <div className="bg-blue-50 p-4 rounded-xl text-sm text-blue-800 border border-blue-100">
+                  <p>A requisição será enviada para aprovação do <strong>Gerente Regional</strong> ou <strong>Administração</strong>.</p>
+                </div>
+
+                <div className="flex gap-3 mt-6 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="flex-1 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-bold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 text-sm font-bold shadow-md"
+                  >
+                    Confirmar Envio
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 };

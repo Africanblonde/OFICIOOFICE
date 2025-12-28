@@ -116,6 +116,33 @@ export interface Requisition {
   logs: LogEntry[];
 }
 
+export interface RequisitionSheet {
+  id: string;
+  requisitionNumber: string; // e.g., "REQ-2025/001"
+  requesterId: string;
+  sourceLocationId: string;
+  sourceLocationName?: string;
+  targetLocationId: string;
+  targetLocationName?: string;
+  status: RequestStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  items: RequisitionSheetItem[];
+}
+
+export interface RequisitionSheetItem {
+  id: string;
+  sheetId: string;
+  itemId?: string | null; // Nullable for manual items
+  itemName: string;
+  quantity: number;
+  unit: string;
+  condition: ItemCondition;
+  isDelivered: boolean;
+  notes?: string;
+}
+
 export interface LogEntry {
   timestamp: string;
   actorId: string;
@@ -205,6 +232,8 @@ export interface CompanyInfo {
   nuit: string;
   endereco: string;
   contacto?: string;
+  email?: string;
+  logo?: string;
 }
 
 export interface ClientInfo {

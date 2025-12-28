@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useLogistics } from '../context/useLogistics';
 import { PaymentMethod, CartItem, TransactionType, Invoice, DocumentType, Client } from '../types';
+import { formatFlexibleDate } from '../utils/dateFormatter';
 import InvoiceModal from '../components/InvoiceModal';
 import {
     ShoppingCart,
@@ -724,7 +725,7 @@ export const POS = () => {
                                     // Render rows
                                     return pageItems.map(tx => (
                                         <tr key={tx.id} className="hover:bg-slate-50">
-                                            <td className="p-3 text-xs text-gray-500">{new Date(tx.date).toLocaleString()}</td>
+                                            <td className="p-3 text-xs text-gray-500">{formatFlexibleDate(tx.date, { time: true })}</td>
                                             <td className="p-3 font-bold text-[12px]">{tx.type === 'SALE' ? 'Recebimento' : 'Despesa'}</td>
                                             <td className="p-3 text-gray-700">{tx.clientName || tx.description || tx.category || '-'}</td>
                                             <td className="p-3 text-right font-bold text-gray-800">{formatCurrency(tx.amount)}</td>
