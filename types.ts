@@ -87,6 +87,7 @@ export interface Item {
   type: ItemType;
   unit: string; // Nova propriedade: Litros, Unidade, Kg, etc.
   price: number; // Preço unitário padrão
+  is_for_sale?: boolean; // Indica se o item está disponível para venda no POS
 }
 
 export interface InventoryRecord {
@@ -193,6 +194,22 @@ export enum PaymentMethod {
   CHEQUE = 'CHEQUE'
 }
 
+// --- EXPENSE MANAGEMENT TYPES ---
+export enum ApprovalStatus {
+  DRAFT = 'DRAFT',           // Rascunho
+  PENDING = 'PENDING',       // Aguardando aprovação
+  APPROVED = 'APPROVED',     // Aprovado
+  REJECTED = 'REJECTED',     // Rejeitado
+  PAID = 'PAID'              // Pago
+}
+
+export enum AttachmentType {
+  RECEIPT = 'RECEIPT',
+  INVOICE = 'INVOICE',
+  RECEIPT_PHOTO = 'RECEIPT_PHOTO',
+  CONTRACT = 'CONTRACT'
+}
+
 export interface CartItem {
   itemId: string;
   name: string;
@@ -215,17 +232,56 @@ export interface Transaction {
   // Expense details
   description?: string; // Para despesas
   category?: string; // Ex: Combustível, Manutenção
+  costCenterId?: string; // --- NEW: Obrigatório para despesas
 
   // Financials
   amount: number; // Valor Total
   paymentMethod: PaymentMethod;
   invoiceId?: string | null; // Optional link to related invoice/payment
+
+  // --- NEW: Approval Workflow ---
+  approvalStatus?: ApprovalStatus;
+  approvedBy?: string;
+  approvalDate?: string;
+  rejectionReason?: string;
+  requiresApproval?: boolean; // true se amount > 5000
+  employeeId?: string;        // Funcionário responsável (para despesas)
+  receiptNumber?: string;     // Número do recibo
 }
 
 // --- INVOICING / FATURAÇÃO TYPES ---
 
 export type DocumentType = "COTACAO" | "PRO_FORMA" | "FATURA" | "FATURA_RECIBO";
 export type InvoiceStatus = "RASCUNHO" | "EMITIDA" | "PAGA_PARCIAL" | "PAGA" | "CANCELADA";
+
+// --- COLLECTIONS / COBRANÇAS TYPES ---
+export enum CollectionStatus {
+  NOT_DUE = 'NOT_DUE',           // Não vencida
+  DUE = 'DUE',                   // Vencida
+  OVERDUE_30 = 'OVERDUE_30',     // Atraso de 30+ dias
+  OVERDUE_60 = 'OVERDUE_60',     // Atraso de 60+ dias
+  OVERDUE_90 = 'OVERDUE_90',     // Atraso de 90+ dias
+  IN_COLLECTION = 'IN_COLLECTION', // Em cobrança ativa
+  PARTIALLY_PAID = 'PARTIALLY_PAID', // Parcialmente paga
+  PAID = 'PAID',                 // Paga
+  WRITTEN_OFF = 'WRITTEN_OFF'    // Anulada/Perda
+}
+
+export enum CollectionAttemptType {
+  EMAIL = 'EMAIL',
+  SMS = 'SMS',
+  PHONE = 'PHONE',
+  LETTER = 'LETTER',
+  PERSONAL_VISIT = 'PERSONAL_VISIT'
+}
+
+export enum CollectionAttemptStatus {
+  PENDING = 'PENDING',
+  SENT = 'SENT',
+  FAILED = 'FAILED',
+  ACKNOWLEDGED = 'ACKNOWLEDGED',
+  PROMISED = 'PROMISED'
+}
 
 export interface CompanyInfo {
   nome: string;
@@ -234,6 +290,19 @@ export interface CompanyInfo {
   contacto?: string;
   email?: string;
   logo?: string;
+}
+
+export interface Client {
+  id?: string;
+  nome?: string;
+  name?: string; // English alias for nome
+  nuit?: string;
+  endereco?: string;
+  address?: string; // English alias for endereco
+  contacto?: string;
+  contact?: string; // English alias for contacto
+  email?: string;
+  notes?: string;
 }
 
 export interface ClientInfo {
@@ -274,17 +343,86 @@ export interface Invoice {
   vencimento?: string;
   observacoes?: string;
   createdBy: string;
+  // --- NEW: Collections Fields ---
+  daysOverdue?: number;           // Dias de atraso (calculado automaticamente)
+  collectionStatus?: CollectionStatus; // Status de cobrança
+  lastCollectionAttempt?: string; // Data da última tentativa
+  collectionNotes?: string;       // Notas sobre cobrança
+  isInstallmentPlan?: boolean;    // Se é parcelado
 }
 
-// --- CLIENT REGISTRY (CRM) ---
-export interface Client {
+// --- COLLECTIONS / COBRANÇAS INTERFACES ---
+
+export interface CollectionAttempt {
   id: string;
-  name: string;
-  nuit?: string;
-  email?: string;
-  contact?: string;
-  address?: string;
+  invoiceId: string;
+  clientId?: string;
+  attemptDate: string; // ISO timestamp
+  attemptType: CollectionAttemptType;
+  attemptStatus: CollectionAttemptStatus;
   notes?: string;
+  responseReceived: boolean;
+  responseDate?: string; // ISO timestamp
+  responseNotes?: string;
+  nextAttemptScheduled?: string; // ISO timestamp
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoiceInstallment {
+  id: string;
+  invoiceId: string;
+  installmentNumber: number;
+  totalInstallments: number;
+  installmentAmount: number;
+  dueDate: string; // ISO date YYYY-MM-DD
+  paidDate?: string; // ISO date
+  paidAmount?: number;
+  paymentMethod?: PaymentMethod;
+  paymentReference?: string;
+  status: 'PENDING' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED';
+  daysOverdue: number; // Calculated field
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientBalance {
+  clientId: string;
+  clientName: string;
+  nuit?: string;
+  totalInvoices: number;
+  paidAmount: number;
+  outstandingAmount: number;
+  overdueAmount: number;
+  maxDaysOverdue: number;
+  overdueInvoiceCount: number;
+  lastPaymentDate?: string;
+}
+
+export interface ClientBalanceHistory {
+  id: string;
+  clientId: string;
+  balanceAmount: number;
+  overdueAmount: number;
+  daysOldestOverdue: number;
+  recordedDate: string; // ISO timestamp
+  notes?: string;
+}
+
+export interface OverdueInvoice {
+  id: string;
+  numero: string;
+  clientName: string;
+  clientNuit?: string;
+  valorTotal: number;
+  dueDate: string;
+  daysOverdue: number;
+  collectionStatus: CollectionStatus;
+  status: InvoiceStatus;
+  attemptCount: number;
+  lastAttemptDate?: string;
 }
 
 // --- PERMISSIONS SYSTEM ---
@@ -313,3 +451,297 @@ export type AppPermission =
   | 'MANAGE_PERMISSIONS';
 
 export type RolePermissions = Record<Role, AppPermission[]>;
+
+// Novos tipos para Ficha Individual
+export type FichaTipo = 'combustivel' | 'oleo' | 'pecas' | 'materiais' | 'ferramentas';
+export type RegistoEstado = 'pendente' | 'confirmado' | 'trancado';
+
+export interface FichaIndividual {
+  id: string;
+  codigo: string;
+  tipo: FichaTipo;
+  entidade_id: string;
+  entidade_tipo: string; // 'viatura', 'maquina', 'trabalhador'
+  data: string;
+  produto_id?: string;
+  produto: string; // nome do produto
+  quantidade: number;
+  unidade: string;
+  stock_antes?: number;
+  stock_depois?: number;
+  observacoes?: string;
+  usuario_registou: string;
+  estado: RegistoEstado;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InitialStock {
+  id: string;
+  produto: string;
+  quantidade_inicial: number;
+  valor_unitario?: number;
+  data_entrada: string;
+  fornecedor?: string;
+  usuario_registou: string;
+  created_at: string;
+}
+
+export interface StockAlarm {
+  id: string;
+  produto: string;
+  stock_minimo: number;
+  stock_critico: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditLog {
+  id: string;
+  tabela: string;
+  record_id: string;
+  action: string;
+  user_id?: string;
+  old_values?: any;
+  new_values?: any;
+  timestamp: string;
+}
+
+// --- FATURAMENTO & DESPESAS EXPANDIDO ---
+
+export enum ClientType {
+  FINAL = 'FINAL',           // Cliente final
+  RESELLER = 'RESELLER',     // Revendedor
+  INSTITUTIONAL = 'INSTITUTIONAL' // Institucional
+}
+
+export enum ClientStatus {
+  ACTIVE = 'ACTIVE',
+  BLOCKED = 'BLOCKED',
+  SUSPENDED = 'SUSPENDED'
+}
+
+export enum CostCenterType {
+  PRODUCTION = 'PRODUCTION', // Produção (talhões)
+  ADMIN = 'ADMIN',          // Administração
+  TRANSPORT = 'TRANSPORT',  // Transporte
+  SALES = 'SALES'          // Vendas
+}
+
+export enum PendingItemStatus {
+  PENDING = 'PENDING',
+  PARTIALLY_INVOICED = 'PARTIALLY_INVOICED',
+  FULLY_INVOICED = 'FULLY_INVOICED'
+}
+
+export interface CostCenter {
+  id: string;
+  name: string;
+  description?: string;
+  type: CostCenterType;
+  locationId?: string;
+  managerId?: string;
+  isActive: boolean;
+  budgetLimit?: number;        // --- NEW
+  budgetPeriod?: string;        // MONTHLY, QUARTERLY, ANNUAL
+  budgetStartDate?: string;     // ISO date
+  createdAt: string;
+}
+
+// --- NEW: EXPENSE MANAGEMENT INTERFACES ---
+
+export interface ExpenseAttachment {
+  id: string;
+  transactionId: string;
+  attachmentType: AttachmentType;
+  fileName: string;
+  fileUrl: string;
+  fileSize?: number;
+  uploadedBy?: string;
+  uploadedAt: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface ExpenseBudgetTracking {
+  id: string;
+  costCenterId: string;
+  periodStart: string; // ISO date
+  periodEnd: string;   // ISO date
+  budgetAmount?: number;
+  spentAmount: number;
+  approvedPendingAmount: number;
+  percentageUsed: number;
+  lastUpdated: string;
+  notes?: string;
+}
+
+export interface ExpenseCategoryLimit {
+  id: string;
+  costCenterId: string;
+  categoryName: string;
+  monthlyLimit: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PendingExpenseApproval {
+  id: string;
+  receiptNumber?: string;
+  description?: string;
+  category?: string;
+  amount: number;
+  date: string;
+  userId: string;
+  userName: string;
+  costCenterName?: string;
+  approvalStatus: ApprovalStatus;
+  attachmentCount: number;
+  requiresApproval: boolean;
+}
+
+export interface ExpenseBudgetSummary {
+  costCenterId: string;
+  costCenterName?: string;
+  periodStart: string;
+  periodEnd: string;
+  budgetAmount?: number;
+  spentAmount: number;
+  approvalPendingAmount?: number;
+  remainingBudget: number;
+  percentageUsed: number;
+  budgetStatus: 'OK' | 'WARNING' | 'CRITICAL' | 'EXCEEDED';
+}
+
+export interface ExpenseByCategoryReport {
+  categoryName?: string;
+  category?: string;
+  costCenterName?: string;
+  totalAmount: number;
+  expenseCount: number;
+  percentageOfTotal: number;
+  averageExpense: number;
+}
+
+export interface PendingInvoiceItem {
+  id: string;
+  clientId: string;
+  itemId: string;
+  costCenterId?: string;
+  quantity: number;
+  unitPrice: number;
+  totalValue: number;
+  referenceDocument?: string;
+  documentDate?: string;
+  notes?: string;
+  status: PendingItemStatus;
+  invoicedQuantity: number;
+  remainingQuantity: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoicePendingLink {
+  id: string;
+  invoiceItemId: string;
+  pendingItemId: string;
+  quantityUsed: number;
+  createdAt: string;
+}
+
+export interface CreditNote {
+  id: string;
+  numero: string;
+  originalInvoiceId: string;
+  reason: string;
+  totalAmount: number;
+  status: InvoiceStatus;
+  issuedDate: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface CreditNoteItem {
+  id: string;
+  creditNoteId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  taxPercent: number;
+}
+
+// Extensões das interfaces existentes
+export interface ClientExtended extends Client {
+  creditLimit: number;
+  currentBalance: number;
+  status: ClientStatus;
+  clientType: ClientType;
+}
+
+export interface ItemExtended extends Item {
+  costCenterId?: string;
+  stockControl: boolean;
+  averageCost: number;
+  is_for_sale?: boolean; // Inherited from Item, but explicitly documented
+}
+
+export interface InvoiceExtended extends Invoice {
+  costCenterId?: string;
+}
+
+// --- RELATÓRIOS FINANCEIROS ---
+
+export interface SalesReport {
+  period: string;
+  totalSales: number;
+  totalInvoices: number;
+  totalClients: number;
+  salesByProduct: Array<{
+    productName: string;
+    quantity: number;
+    revenue: number;
+  }>;
+  salesByClient: Array<{
+    clientName: string;
+    totalValue: number;
+    invoiceCount: number;
+  }>;
+}
+
+export interface FinancialReport {
+  accountsReceivable: number;
+  overdueAccounts: number;
+  cashFlow: Array<{
+    date: string;
+    income: number;
+    expenses: number;
+    net: number;
+  }>;
+  clientBalances: Array<{
+    clientId: string;
+    clientName: string;
+    balance: number;
+    lastPayment?: string;
+  }>;
+}
+
+export interface ProfitabilityReport {
+  costCenters: Array<{
+    costCenterId: string;
+    costCenterName: string;
+    revenue: number;
+    costs: number;
+    profit: number;
+    margin: number;
+  }>;
+  products: Array<{
+    productId: string;
+    productName: string;
+    soldQuantity: number;
+    revenue: number;
+    cost: number;
+    profit: number;
+    margin: number;
+  }>;
+}

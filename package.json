@@ -8,11 +8,16 @@
     "build": "vite build",
     "preview": "vite preview",
     "validate:db": "ts-node --transpile-only scripts/validate_db.ts",
-    "build:scripts": "tsc --outDir build scripts/validate_db.ts"
+    "build:scripts": "tsc --outDir build scripts/validate_db.ts",
+    "setup:db": "node scripts/setup-database.js",
+    "setup:supabase": "node scripts/setup-supabase.js",
+    "check:supabase": "node scripts/check-supabase.js",
+    "verify:schema": "node scripts/verify-schema.js"
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
     "@supabase/supabase-js": "^2.48.1",
+    "dotenv": "^17.2.3",
     "lucide-react": "^0.554.0",
     "pg": "^8.16.3",
     "react": "^19.2.0",

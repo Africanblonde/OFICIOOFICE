@@ -12,6 +12,10 @@ import { Patrimony } from './pages/Patrimony';
 import { POS } from './pages/POS';
 import { Permissions } from './pages/Permissions';
 import { Payroll } from './pages/Payroll';
+import { FichasIndividuais } from './pages/FichasIndividuais';
+import ContasAReceber from './pages/ContasAReceber';
+import ExpenseApprovals from './pages/ExpenseApprovals';
+import ExpenseBudgetReports from './pages/ExpenseBudgetReports';
 import { AuthPage } from './pages/AuthPage';
 import { supabase } from './services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
@@ -50,6 +54,10 @@ function App() {
       case 'pos': return <POS />;
       case 'permissions': return <Permissions />;
       case 'payroll': return <Payroll />;
+      case 'fichas': return <FichasIndividuais />;
+      case 'contas-receber': return <ContasAReceber />;
+      case 'expense-approvals': return <ExpenseApprovals />;
+      case 'expense-reports': return <ExpenseBudgetReports />;
       default: return <Dashboard onNavigate={setActiveTab} />;
     }
   };
