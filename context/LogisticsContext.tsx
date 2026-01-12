@@ -5,7 +5,9 @@ import {
   DailyPerformance, AttendanceStatus, ItemCondition, ItemType, ItemTypeDefinition, AccountingEntry,
   Transaction, CartItem, TransactionType, PaymentMethod, RolePermissions, AppPermission, PayrollRecord,
   Invoice, InvoiceItem, InvoicePayment, DocumentType, InvoiceStatus, Client, CompanyInfo,
-  RequisitionSheet, RequisitionSheetItem
+  RequisitionSheet, RequisitionSheetItem, FichaIndividual, InitialStock, StockAlarm, AuditLog, FichaTipo, RegistoEstado,
+  CostCenter, CostCenterType, PendingInvoiceItem, PendingItemStatus, InvoicePendingLink, CreditNote,
+  ClientExtended, ItemExtended, SalesReport, FinancialReport, ProfitabilityReport
 } from '../types';
 // Removed demo constants imports (USERS, ITEMS, LOCATIONS, etc.)
 import { supabase } from '../services/supabaseClient';
@@ -27,6 +29,17 @@ interface LogisticsContextType {
   transactions: Transaction[];
   invoices: Invoice[];
   clients: Client[]; // New
+  fichasIndividuais: FichaIndividual[];
+  initialStocks: InitialStock[];
+  stockAlarms: StockAlarm[];
+  auditLogs: AuditLog[];
+
+  // Novos estados para faturamento expandido
+  costCenters: CostCenter[];
+  pendingInvoiceItems: PendingInvoiceItem[];
+  invoicePendingLinks: InvoicePendingLink[];
+  creditNotes: CreditNote[];
+
   selectedDepartmentId: string | null;
   lastUpdated: Date;
   notification: string | null;
@@ -55,12 +68,14 @@ interface LogisticsContextType {
   getInventoryByLocation: (locationId: string) => InventoryRecord[];
   getItemName: (itemId: string) => string;
   getLocationName: (locationId: string) => string;
+  getClientName: (clientId: string) => string;
   savePerformanceRecord: (record: DailyPerformance) => void;
   getWorkersByManager: (managerId: string) => User[];
   getWorkersByLocation: (locationId: string) => User[];
   refreshData: () => void;
-  registerNewItem: (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number) => void;
+  registerNewItem: (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number, isForSale?: boolean) => void;
   addToInventory: (itemId: string, locationId: string, qty: number, unitPrice: number) => void;
+  updateItem: (itemId: string, updates: Partial<Item>) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
   addUser: (user: { name: string; email: string; password?: string; role: Role; locationId?: string; jobTitle?: string; defaultDailyGoal?: number; dailyRate?: number; halfDayRate?: number; absencePenalty?: number; bonusPerUnit?: number; }) => Promise<void>;
   updateUser: (updatedUser: User) => void;
@@ -98,6 +113,42 @@ interface LogisticsContextType {
   // Payroll Functions
   updatePayrollParams: (userId: string, advances: number) => void;
   calculatePayrollForUser: (user: User) => PayrollRecord;
+
+  // Ficha Individual Functions
+  createFicha: (ficha: Omit<FichaIndividual, 'id' | 'codigo' | 'created_at' | 'updated_at'>) => Promise<void>;
+  confirmFicha: (fichaId: string) => Promise<void>;
+  lockFicha: (fichaId: string) => Promise<void>;
+  updateFicha: (ficha: FichaIndividual) => Promise<void>;
+  deleteFicha: (fichaId: string) => Promise<void>;
+
+  // Cost Center Functions
+  addCostCenter: (costCenter: Omit<CostCenter, 'id' | 'createdAt'>) => Promise<void>;
+  updateCostCenter: (costCenter: CostCenter) => Promise<void>;
+  deleteCostCenter: (costCenterId: string) => Promise<void>;
+
+  // Pending Invoice Items Functions
+  createPendingInvoiceItem: (item: Omit<PendingInvoiceItem, 'id' | 'totalValue' | 'invoicedQuantity' | 'remainingQuantity' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updatePendingInvoiceItem: (item: PendingInvoiceItem) => Promise<void>;
+  deletePendingInvoiceItem: (itemId: string) => Promise<void>;
+  linkInvoiceToPendingItem: (invoiceItemId: string, pendingItemId: string, quantityUsed: number) => Promise<void>;
+
+  // Credit Notes Functions
+  createCreditNote: (creditNote: Omit<CreditNote, 'id' | 'createdAt'>) => Promise<void>;
+  updateCreditNote: (creditNote: CreditNote) => Promise<void>;
+
+  // Extended Client Functions
+  updateClientExtended: (client: ClientExtended) => Promise<void>;
+  getClientCreditStatus: (clientId: string) => { availableCredit: number; isBlocked: boolean };
+
+  // Reports Functions
+  generateSalesReport: (startDate: string, endDate: string) => Promise<SalesReport>;
+  generateFinancialReport: (startDate: string, endDate: string) => Promise<FinancialReport>;
+  generateProfitabilityReport: (startDate: string, endDate: string) => Promise<ProfitabilityReport>;
+  createInitialStock: (stock: Omit<InitialStock, 'id' | 'created_at'>) => Promise<void>;
+  updateStockAlarm: (alarm: StockAlarm) => Promise<void>;
+  getAuditLogsForTable: (table: string, recordId: string) => AuditLog[];
+  // Reset local/front-end data (clears localStorage and resets in-memory lists)
+  resetLocalData: () => void;
 }
 
 
@@ -178,6 +229,19 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   });
   const [availableCurrencies] = useState<string[]>(['MZN', 'USD']);
   const [defaultCurrency, setDefaultCurrency] = useState<string>('MZN');
+
+  // Ficha Individual State
+  const [fichasIndividuais, setFichasIndividuais] = useState<FichaIndividual[]>([]);
+  const [initialStocks, setInitialStocks] = useState<InitialStock[]>([]);
+  const [stockAlarms, setStockAlarms] = useState<StockAlarm[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+
+  // Novos estados para faturamento expandido
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [pendingInvoiceItems, setPendingInvoiceItems] = useState<PendingInvoiceItem[]>([]);
+  const [invoicePendingLinks, setInvoicePendingLinks] = useState<InvoicePendingLink[]>([]);
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+
   const [isLoadingUser, setIsLoadingUser] = useState(true);
 
   // Helper
@@ -327,7 +391,6 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           updatedAt: req.updated_at,
           logs: req.logs || []
         }));
-        setRequisitions(mappedRequisitions);
         setRequisitions(mappedRequisitions);
       }
 
@@ -647,11 +710,62 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           }));
           setRequisitionSheets(mappedSheets);
         }
+
+        // Fetch Fichas Individuais
+        const { data: fichasData } = await supabase.from('fichas_individuais').select('*').order('created_at', { ascending: false });
+        if (fichasData) {
+          setFichasIndividuais(fichasData.map((f: any) => ({
+            id: f.id,
+            codigo: f.codigo,
+            tipo: f.tipo,
+            entidade_id: f.entidade_id,
+            entidade_tipo: f.entidade_tipo,
+            data: f.data,
+            produto_id: f.produto_id,
+            produto: f.produto_name || f.produto,
+            quantidade: f.quantidade,
+            unidade: f.unidade,
+            stock_antes: f.stock_antes,
+            stock_depois: f.stock_depois,
+            observacoes: f.observacoes,
+            usuario_registou: f.usuario_registou,
+            estado: f.estado,
+            created_at: f.created_at,
+            updated_at: f.updated_at
+          })));
+        }
+
+        // Fetch Initial Stocks
+        const { data: stocksData } = await supabase.from('initial_stock').select('*');
+        if (stocksData) setInitialStocks(stocksData);
+
+        // Fetch Stock Alarms
+        const { data: alarmsData } = await supabase.from('stock_alarms').select('*');
+        if (alarmsData) setStockAlarms(alarmsData);
+
+        // Fetch Audit Logs (only for admin)
+        if (mappedUser.role === Role.ADMIN) {
+          const { data: logsData } = await supabase.from('audit_log').select('*').order('timestamp', { ascending: false });
+          if (logsData) setAuditLogs(logsData);
+        }
+
       } else if (error) {
-        console.error('❌ Erro ao buscar dados do usuário:', error);
+        // Handle 406 and other specific errors
+        if ((error as any).code === '406' || (error as any).status === 406) {
+          console.error('❌ Erro 406 (Not Acceptable): Verifique se a query está correta. Error:', error.message);
+          // Don't show notification here to avoid blocking the app
+        } else {
+          console.error('❌ Erro ao buscar dados do usuário:', error);
+        }
       }
-    } catch (err) {
-      console.error('❌ Error refreshing profile:', err);
+    } catch (err: any) {
+      // Log the full error without blocking the app
+      console.error('❌ Error refreshing profile:', {
+        message: err?.message,
+        status: err?.status,
+        details: err
+      });
+      // Don't rethrow - allow app to continue running
     }
   };
 
@@ -665,7 +779,10 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Real-time subscriptions: keep UI in sync when other users make changes.
   useEffect(() => {
-    if (isLoadingUser) return; // wait until initial load completes
+    // Skip if loading user or not initialized
+    if (isLoadingUser || !currentUser) {
+      return;
+    }
 
     const unsubscribe = subscribeToPublicTables(supabase, async (payload: any) => {
       // payload shape may vary between supabase versions; handle common properties
@@ -728,6 +845,32 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
               }))
             }));
             setRequisitionSheets(mappedSheets);
+          }
+          return;
+        }
+
+        if (table === 'fichas_individuais') {
+          const { data: fichasData } = await supabase.from('fichas_individuais').select('*').order('created_at', { ascending: false });
+          if (fichasData) {
+            setFichasIndividuais(fichasData.map((f: any) => ({
+              id: f.id,
+              codigo: f.codigo,
+              tipo: f.tipo,
+              entidade_id: f.entidade_id,
+              entidade_tipo: f.entidade_tipo,
+              data: f.data,
+              produto_id: f.produto_id,
+              produto: f.produto_name || f.produto,
+              quantidade: f.quantidade,
+              unidade: f.unidade,
+              stock_antes: f.stock_antes,
+              stock_depois: f.stock_depois,
+              observacoes: f.observacoes,
+              usuario_registou: f.usuario_registou,
+              estado: f.estado,
+              created_at: f.created_at,
+              updated_at: f.updated_at
+            })));
           }
           return;
         }
@@ -808,7 +951,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     return () => {
       unsubscribe().catch(() => null);
     };
-  }, [isLoadingUser]);
+  }, [isLoadingUser, currentUser]);
 
   const getSourceLocation = (targetLocId: string): string => {
     const target = locations.find(l => l.id === targetLocId);
@@ -1010,7 +1153,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   };
 
-  const addToInventory = (itemId: string, locationId: string, qty: number, unitPrice: number) => {
+  const addToInventory = async (itemId: string, locationId: string, qty: number, unitPrice: number) => {
     if (!currentUser) return;
     // Validate locationId is provided and well-formed UUID
     if (!locationId || !isValidUuid(locationId)) {
@@ -1023,9 +1166,23 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
-    updateInventory(itemId, locationId, qty);
+    // Update local inventory immediately for better UX
+    setInventory(prev => {
+        const existingIdx = prev.findIndex(r => r.itemId === itemId && r.locationId === locationId);
+        if (existingIdx >= 0) {
+            const updated = [...prev];
+            updated[existingIdx] = { ...updated[existingIdx], quantity: updated[existingIdx].quantity + qty };
+            return updated;
+        }
+        // If it doesn't exist, we rely on the DB update which will trigger a refresh or we add a temp record
+        return [...prev, { id: `temp-${Date.now()}`, itemId, locationId, quantity: qty }];
+    });
+
+    await updateInventory(itemId, locationId, qty);
 
     const item = items.find(i => i.id === itemId);
+
+    // 1. Record Accounting Entry (Asset/Liability)
     const newEntry: AccountingEntry = {
       id: `acc-${Date.now()}`,
       date: new Date().toISOString(),
@@ -1040,17 +1197,73 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     };
 
     setAccountingEntries(prev => [newEntry, ...prev]);
+
+    // 2. NEW: Record Financial Expense (Purchase)
+    try {
+      const description = `Compra de estoque: ${qty}x ${item?.name || 'Item Desconhecido'}`;
+      await supabase.from('transactions').insert({
+        type: TransactionType.EXPENSE,
+        user_id: currentUser.id,
+        location_id: locationId,
+        description: description,
+        category: 'Compra de Estoque',
+        amount: qty * unitPrice,
+        payment_method: PaymentMethod.CASH, // Default to cash for direct stock additions
+        date: new Date().toISOString()
+      });
+      // Refresh transactions to reflect new expense
+      const { data: transactionsData } = await supabase
+        .from('transactions')
+        .select(`*, items:transaction_items(*)`)
+        .order('date', { ascending: false });
+      if (transactionsData) setTransactions(transactionsData.map(mapDbTransactionToApp));
+    } catch (txnError) {
+      console.error('Erro ao registrar despesa de estoque:', txnError);
+    }
+
     showNotification(`Estoque adicionado: ${qty}x ${item?.name}`);
   };
 
-  const registerNewItem = async (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number) => {
+  const updateItem = async (itemId: string, updates: Partial<Item>) => {
+    if (!currentUser || currentUser.role !== Role.ADMIN) {
+      showNotification("❌ ACESSO NEGADO: Apenas administradores podem editar itens.");
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('items')
+        .update({
+          name: updates.name,
+          sku: updates.sku,
+          category: updates.category,
+          unit: updates.unit,
+          type: updates.type,
+          price: updates.price,
+          is_for_sale: updates.is_for_sale
+        })
+        .eq('id', itemId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setItems(prev => prev.map(i => i.id === itemId ? data : i));
+      showNotification(`✅ Item "${updates.name || 'item'}" atualizado com sucesso.`);
+    } catch (error: any) {
+      showNotification(`❌ Erro ao atualizar item: ${error.message}`);
+    }
+  };
+
+  const registerNewItem = async (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number, isForSale: boolean = true) => {
     const { data, error } = await supabase.from('items').insert({
       name,
       sku,
       category,
       unit,
       type: behavior,
-      price: unitPrice
+      price: unitPrice,
+      is_for_sale: isForSale
     }).select().single();
 
     if (error) {
@@ -1058,10 +1271,11 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
-    setItems([...items, data]);
+    const newItem = data as Item;
+    setItems(prev => [...prev, newItem]);
 
     if (initialQty > 0) {
-      addToInventory(data.id, locationId, initialQty, unitPrice);
+      await addToInventory(newItem.id, locationId, initialQty, unitPrice);
     } else {
       showNotification("Item cadastrado com sucesso.");
     }
@@ -1073,14 +1287,8 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
-    // Check if item exists in inventory
-    const hasInventory = inventory.some(inv => inv.itemId === itemId);
-    if (hasInventory) {
-      showNotification("❌ Não é possível apagar item com estoque registrado. Remova o estoque primeiro.");
-      return;
-    }
-
-    // Delete from Supabase
+    // Attempt to delete from Supabase
+    // Note: DB constraints should be set to CASCADE for inventory and SET NULL for history
     const { error } = await supabase.from('items').delete().eq('id', itemId);
 
     if (error) {
@@ -1154,6 +1362,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const getItemName = (itemId: string) => items.find(i => i.id === itemId)?.name || 'Item desconhecido';
   const getLocationName = (locationId: string) => locations.find(l => l.id === locationId)?.name || 'Local desconhecido';
+  const getClientName = (clientId: string) => clients.find(c => c.id === clientId)?.name || 'Cliente desconhecido';
 
   const savePerformanceRecord = async (record: DailyPerformance) => {
     if (!currentUser) return;
@@ -1595,6 +1804,37 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         return;
       }
 
+      // Task 1.3: Validate client and credit limit
+      if (invoice.cliente.id) {
+        const clientRecord = clients.find(c => c.id === invoice.cliente.id);
+        if (clientRecord) {
+          // Check if client is blocked
+          if (clientRecord && (clientRecord as any).is_blocked) {
+            const blockReason = (clientRecord as any).block_reason || 'Não especificado';
+            showNotification(`Cliente bloqueado: ${blockReason}`);
+            return;
+          }
+
+          // Check credit limit
+          const invoiceTotal = invoice.itens.reduce((sum, item) => {
+            return sum + (item.quantidade * item.precoUnitario * (1 + (item.impostoPercent || 0) / 100));
+          }, 0);
+
+          const creditLimit = (clientRecord as any).credit_limit || 0;
+          const creditUsed = (clientRecord as any).credit_used || 0;
+          const availableCredit = creditLimit - creditUsed;
+
+          if (invoiceTotal > availableCredit && availableCredit >= 0) {
+            showNotification(
+              `Crédito insuficiente. Limite: ${creditLimit.toFixed(2)} MZN | ` +
+              `Utilizado: ${creditUsed.toFixed(2)} MZN | ` +
+              `Disponível: ${availableCredit.toFixed(2)} MZN`
+            );
+            return;
+          }
+        }
+      }
+
       const invoicePayload: any = {
         id: invoice.id,
         numero: invoice.numero,
@@ -1614,7 +1854,8 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         issue_date: invoice.dataEmissao,
         due_date: invoice.vencimento || null,
         notes: invoice.observacoes || null,
-        created_by: invoice.createdBy
+        created_by: invoice.createdBy,
+        is_editable: invoice.status === 'RASCUNHO'
       };
 
       const { data: invData, error: invError } = await supabase.from('invoices').insert(invoicePayload).select().single();
@@ -1639,10 +1880,30 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           description: i.descricao,
           quantity: i.quantidade,
           unit_price: i.precoUnitario,
-          tax_percent: i.impostoPercent || 0
+          tax_percent: i.impostoPercent || 16  // Task 1.1: Default VAT to 16%
         }));
         const { error: itemsErr } = await supabase.from('invoice_items').insert(itemsPayload);
         if (itemsErr) showNotification(`Erro ao salvar itens da fatura: ${itemsErr.message}`);
+      }
+
+      // Task 1.6: Create invoice audit log entry
+      try {
+        await supabase.from('invoice_audit_log').insert({
+          invoice_id: invData.id,
+          action: 'CREATE',
+          changed_fields: {
+            old_values: null,
+            new_values: {
+              numero: invoice.numero,
+              status: invoice.status,
+              cliente: invoice.cliente.nome,
+              total_items: invoice.itens.length
+            }
+          },
+          user_id: currentUser?.id || invoice.createdBy || null
+        });
+      } catch (auditErr) {
+        console.warn('Failed to create audit log entry:', auditErr);
       }
 
       // Insert payments
@@ -2149,6 +2410,395 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   };
 
+  // Ficha Individual Functions
+  const createFicha = async (ficha: Omit<FichaIndividual, 'id' | 'codigo' | 'created_at' | 'updated_at'>) => {
+    if (!currentUser) return;
+    try {
+      // 1. Obter localização da entidade/pessoa se disponível, ou usar a do usuário atual
+      const person = allUsers.find(u => u.id === ficha.entidade_id);
+      const targetLocationId = person?.locationId || currentUser.locationId;
+
+      if (!targetLocationId) {
+        showNotification("Erro: Não foi possível determinar a localização para saída de stock.");
+        return;
+      }
+
+      // 2. Obter stock atual antes da redução
+      let stockAntes = 0;
+      if (ficha.produto_id) {
+        const invRecord = inventory.find(i => i.itemId === ficha.produto_id && i.locationId === targetLocationId);
+        stockAntes = invRecord?.quantity || 0;
+      }
+
+      // 3. Gerar código automático
+      const { count } = await supabase.from('fichas_individuais').select('id', { count: 'exact', head: true });
+      const nextCode = `FICHA-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, '0')}`;
+
+      // 4. Inserir registo
+      const { data, error } = await supabase.from('fichas_individuais').insert({
+        codigo: nextCode,
+        tipo: ficha.tipo,
+        entidade_id: ficha.entidade_id,
+        entidade_tipo: ficha.entidade_tipo,
+        data: ficha.data,
+        produto_id: ficha.produto_id,
+        produto_name: ficha.produto,
+        quantidade: ficha.quantidade,
+        unidade: ficha.unidade,
+        stock_antes: stockAntes,
+        stock_depois: stockAntes - ficha.quantidade,
+        observacoes: ficha.observacoes,
+        usuario_registou: currentUser.id,
+        estado: 'confirmado' // Sugestão: entrega direta já nasce confirmada para reduzir stock
+      }).select().single();
+
+      if (error) throw error;
+
+      // 5. Reduzir stock se houver produto_id
+      if (ficha.produto_id) {
+        await updateInventory(ficha.produto_id, targetLocationId, -ficha.quantidade);
+      }
+
+      setFichasIndividuais(prev => [data, ...prev]);
+      showNotification('Entrega registrada e stock atualizado!');
+    } catch (error: any) {
+      console.error('Erro ao criar ficha:', error);
+      showNotification(`Erro ao criar ficha: ${error.message}`);
+    }
+  };
+
+  const confirmFicha = async (fichaId: string) => {
+    if (!currentUser) return;
+    try {
+      const { error } = await supabase.from('fichas_individuais').update({ estado: 'confirmado' }).eq('id', fichaId);
+      if (error) throw error;
+      setFichasIndividuais(prev => prev.map(f => f.id === fichaId ? { ...f, estado: 'confirmado' } : f));
+      showNotification('Ficha confirmada!');
+    } catch (error: any) {
+      showNotification(`Erro ao confirmar ficha: ${error.message}`);
+    }
+  };
+
+  const lockFicha = async (fichaId: string) => {
+    if (!currentUser) return;
+    try {
+      const { error } = await supabase.from('fichas_individuais').update({ estado: 'trancado' }).eq('id', fichaId);
+      if (error) throw error;
+      setFichasIndividuais(prev => prev.map(f => f.id === fichaId ? { ...f, estado: 'trancado' } : f));
+      showNotification('Ficha trancada!');
+    } catch (error: any) {
+      showNotification(`Erro ao trancar ficha: ${error.message}`);
+    }
+  };
+
+  const updateFicha = async (ficha: FichaIndividual) => {
+    if (!currentUser || currentUser.role !== Role.ADMIN) {
+      showNotification('Apenas administradores podem editar fichas.');
+      return;
+    }
+    try {
+      const { error } = await supabase.from('fichas_individuais').update(ficha).eq('id', ficha.id);
+      if (error) throw error;
+      setFichasIndividuais(prev => prev.map(f => f.id === ficha.id ? ficha : f));
+      showNotification('Ficha atualizada!');
+    } catch (error: any) {
+      showNotification(`Erro ao atualizar ficha: ${error.message}`);
+    }
+  };
+
+  const deleteFicha = async (fichaId: string) => {
+    if (!currentUser || currentUser.role !== Role.ADMIN) {
+      showNotification('Apenas administradores podem apagar fichas.');
+      return;
+    }
+    try {
+      const { error } = await supabase.from('fichas_individuais').delete().eq('id', fichaId);
+      if (error) throw error;
+      setFichasIndividuais(prev => prev.filter(f => f.id !== fichaId));
+      showNotification('Ficha apagada!');
+    } catch (error: any) {
+      showNotification(`Erro ao apagar ficha: ${error.message}`);
+    }
+  };
+
+  const createInitialStock = async (stock: Omit<InitialStock, 'id' | 'created_at'>) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('initial_stock').insert({
+        ...stock,
+        usuario_registou: currentUser.id
+      }).select().single();
+      if (error) throw error;
+      setInitialStocks(prev => [...prev, data]);
+      showNotification('Stock inicial criado!');
+    } catch (error: any) {
+      showNotification(`Erro ao criar stock inicial: ${error.message}`);
+    }
+  };
+
+  const updateStockAlarm = async (alarm: StockAlarm) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('stock_alarms').upsert(alarm).select().single();
+      if (error) throw error;
+      setStockAlarms(prev => prev.map(a => a.id === alarm.id ? data : a));
+      showNotification('Alarme de stock atualizado!');
+    } catch (error: any) {
+      showNotification(`Erro ao atualizar alarme: ${error.message}`);
+    }
+  };
+
+  const getAuditLogsForTable = (table: string, recordId: string) => {
+    return auditLogs.filter(log => log.tabela === table && log.record_id === recordId);
+  };
+
+  // === NOVAS FUNÇÕES PARA FATURAMENTO EXPANDIDO ===
+
+  // Cost Center Functions
+  const addCostCenter = async (costCenter: Omit<CostCenter, 'id' | 'createdAt'>) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('cost_centers').insert({
+        ...costCenter,
+        created_at: new Date().toISOString()
+      }).select().single();
+      if (error) throw error;
+      setCostCenters(prev => [...prev, data]);
+      showNotification('Centro de custo criado!');
+    } catch (error: any) {
+      showNotification(`Erro ao criar centro de custo: ${error.message}`);
+    }
+  };
+
+  const updateCostCenter = async (costCenter: CostCenter) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('cost_centers').update(costCenter).eq('id', costCenter.id).select().single();
+      if (error) throw error;
+      setCostCenters(prev => prev.map(cc => cc.id === costCenter.id ? data : cc));
+      showNotification('Centro de custo atualizado!');
+    } catch (error: any) {
+      showNotification(`Erro ao atualizar centro de custo: ${error.message}`);
+    }
+  };
+
+  const deleteCostCenter = async (costCenterId: string) => {
+    if (!currentUser) return;
+    try {
+      const { error } = await supabase.from('cost_centers').delete().eq('id', costCenterId);
+      if (error) throw error;
+      setCostCenters(prev => prev.filter(cc => cc.id !== costCenterId));
+      showNotification('Centro de custo removido!');
+    } catch (error: any) {
+      showNotification(`Erro ao remover centro de custo: ${error.message}`);
+    }
+  };
+
+  // Pending Invoice Items Functions
+  const createPendingInvoiceItem = async (item: Omit<PendingInvoiceItem, 'id' | 'totalValue' | 'invoicedQuantity' | 'remainingQuantity' | 'createdAt' | 'updatedAt'>) => {
+    if (!currentUser) return;
+    try {
+      const totalValue = item.quantity * item.unitPrice;
+      const { data, error } = await supabase.from('pending_invoice_items').insert({
+        ...item,
+        total_value: totalValue,
+        invoiced_quantity: 0,
+        remaining_quantity: item.quantity,
+        created_by: currentUser.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).select().single();
+      if (error) throw error;
+      setPendingInvoiceItems(prev => [...prev, data]);
+      showNotification('Item por faturar criado!');
+    } catch (error: any) {
+      showNotification(`Erro ao criar item pendente: ${error.message}`);
+    }
+  };
+
+  const updatePendingInvoiceItem = async (item: PendingInvoiceItem) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('pending_invoice_items').update({
+        ...item,
+        updated_at: new Date().toISOString()
+      }).eq('id', item.id).select().single();
+      if (error) throw error;
+      setPendingInvoiceItems(prev => prev.map(pi => pi.id === item.id ? data : pi));
+      showNotification('Item pendente atualizado!');
+    } catch (error: any) {
+      showNotification(`Erro ao atualizar item pendente: ${error.message}`);
+    }
+  };
+
+  const deletePendingInvoiceItem = async (itemId: string) => {
+    if (!currentUser) return;
+    try {
+      const { error } = await supabase.from('pending_invoice_items').delete().eq('id', itemId);
+      if (error) throw error;
+      setPendingInvoiceItems(prev => prev.filter(pi => pi.id !== itemId));
+      showNotification('Item pendente removido!');
+    } catch (error: any) {
+      showNotification(`Erro ao remover item pendente: ${error.message}`);
+    }
+  };
+
+  const linkInvoiceToPendingItem = async (invoiceItemId: string, pendingItemId: string, quantityUsed: number) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('invoice_pending_links').insert({
+        invoice_item_id: invoiceItemId,
+        pending_item_id: pendingItemId,
+        quantity_used: quantityUsed,
+        created_at: new Date().toISOString()
+      }).select().single();
+      if (error) throw error;
+      setInvoicePendingLinks(prev => [...prev, data]);
+      showNotification('Item ligado à fatura!');
+    } catch (error: any) {
+      showNotification(`Erro ao ligar item: ${error.message}`);
+    }
+  };
+
+  // Credit Notes Functions
+  const createCreditNote = async (creditNote: Omit<CreditNote, 'id' | 'createdAt'>) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('credit_notes').insert({
+        ...creditNote,
+        created_by: currentUser.id,
+        created_at: new Date().toISOString()
+      }).select().single();
+      if (error) throw error;
+      setCreditNotes(prev => [...prev, data]);
+      showNotification('Nota de crédito criada!');
+    } catch (error: any) {
+      showNotification(`Erro ao criar nota de crédito: ${error.message}`);
+    }
+  };
+
+  const updateCreditNote = async (creditNote: CreditNote) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('credit_notes').update(creditNote).eq('id', creditNote.id).select().single();
+      if (error) throw error;
+      setCreditNotes(prev => prev.map(cn => cn.id === creditNote.id ? data : cn));
+      showNotification('Nota de crédito atualizada!');
+    } catch (error: any) {
+      showNotification(`Erro ao atualizar nota de crédito: ${error.message}`);
+    }
+  };
+
+  // Extended Client Functions
+  const updateClientExtended = async (client: ClientExtended) => {
+    if (!currentUser) return;
+    try {
+      const { data, error } = await supabase.from('clients').update({
+        ...client,
+        credit_limit: client.creditLimit,
+        current_balance: client.currentBalance,
+        status: client.status,
+        client_type: client.clientType
+      }).eq('id', client.id).select().single();
+      if (error) throw error;
+      setClients(prev => prev.map(c => c.id === client.id ? data : c));
+      showNotification('Cliente atualizado!');
+    } catch (error: any) {
+      showNotification(`Erro ao atualizar cliente: ${error.message}`);
+    }
+  };
+
+  const getClientCreditStatus = (clientId: string) => {
+    const client = clients.find(c => c.id === clientId) as ClientExtended;
+    if (!client) return { availableCredit: 0, isBlocked: true };
+
+    const availableCredit = client.creditLimit - client.currentBalance;
+    const isBlocked = client.status === 'BLOCKED' || client.status === 'SUSPENDED' || availableCredit < 0;
+
+    return { availableCredit, isBlocked };
+  };
+
+  // Reports Functions (implementações básicas)
+  const generateSalesReport = async (startDate: string, endDate: string): Promise<SalesReport> => {
+    // Implementação básica - será expandida
+    return {
+      period: `${startDate} - ${endDate}`,
+      totalSales: 0,
+      totalInvoices: invoices.length,
+      totalClients: clients.length,
+      salesByProduct: [],
+      salesByClient: []
+    };
+  };
+
+  const generateFinancialReport = async (startDate: string, endDate: string): Promise<FinancialReport> => {
+    // Implementação básica - será expandida
+    return {
+      accountsReceivable: 0,
+      overdueAccounts: 0,
+      cashFlow: [],
+      clientBalances: []
+    };
+  };
+
+  const generateProfitabilityReport = async (startDate: string, endDate: string): Promise<ProfitabilityReport> => {
+    // Implementação básica - será expandida
+    return {
+      costCenters: [],
+      products: []
+    };
+  };
+
+  // Reset local front-end data: clears localStorage and resets app states to empty/defaults.
+  const resetLocalData = () => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        console.log('🧹 Limpando localStorage...');
+        localStorage.clear();
+      }
+    } catch (err) {
+      console.warn('Não foi possível limpar localStorage:', err);
+    }
+
+    // Reset in-memory states
+    setAllUsers([]);
+    setItems([]);
+    setLocations([]);
+    setInventory([]);
+    setRequisitions([]);
+    setRequisitionSheets([]);
+    setPerformanceRecords([]);
+    setAccountingEntries([]);
+    setLogEntries([]);
+    setTransactions([]);
+    setInvoices([]);
+    setClients([]);
+    setFichasIndividuais([]);
+    setInitialStocks([]);
+    setStockAlarms([]);
+    setAuditLogs([]);
+    setCostCenters([]);
+    setPendingInvoiceItems([]);
+    setInvoicePendingLinks([]);
+    setCreditNotes([]);
+
+    setCategories([]);
+    setMeasureUnits([]);
+    setItemTypes([]);
+    setPaymentMethods([]);
+    setExpenseCategories([]);
+    setCompanyInfo({ nome: '', nuit: '', endereco: '', contacto: '' });
+    setDefaultCurrency(availableCurrencies[0] || 'MZN');
+    setPayrollParams({});
+
+    setSelectedDepartmentId(null);
+    setCurrentUser(null);
+    setLastUpdated(new Date());
+    setNotification(null);
+
+    showNotification('Dados locais reiniciados.');
+  };
+
   // Show loading screen while user is being loaded
   if (isLoadingUser) {
     return (
@@ -2165,7 +2815,8 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   return (
     <LogisticsContext.Provider value={{
-      currentUser, allUsers, items, locations, inventory, requisitions, requisitionSheets, performanceRecords, accountingEntries, transactions, invoices, clients, logEntries,
+      currentUser, allUsers, items, locations, inventory, requisitions, requisitionSheets, performanceRecords, accountingEntries, transactions, invoices, clients, fichasIndividuais, initialStocks, stockAlarms, auditLogs, logEntries,
+      costCenters, pendingInvoiceItems, invoicePendingLinks, creditNotes,
       selectedDepartmentId, lastUpdated, notification, isAdminOrGM,
       categories, measureUnits, itemTypes, rolePermissions,
       paymentMethods, expenseCategories, companyInfo, availableCurrencies, defaultCurrency,
@@ -2175,14 +2826,21 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       updateRequisitionStatus,
       updateRequisitionSheetStatus,
       updateRequisitionSheetItemDelivery,
-      getInventoryByLocation, getItemName, getLocationName, savePerformanceRecord, getWorkersByManager,
-      getWorkersByLocation, refreshData, registerNewItem, addToInventory, deleteItem,
+      getInventoryByLocation, getItemName, getLocationName, getClientName, savePerformanceRecord, getWorkersByManager,
+      getWorkersByLocation, refreshData, registerNewItem, addToInventory, deleteItem, updateItem,
+      resetLocalData,
       addUser, updateUser, deleteUser, addLocation, removeLocation, addCategory, addMeasureUnit, addItemType,
       addPaymentMethod, removePaymentMethod, addExpenseCategory, removeExpenseCategory, updateCompanyInfo, setDefaultCurrency,
       processSale, registerExpense, hasPermission, togglePermission,
       addInvoice, updateInvoice, deleteInvoice, getNextInvoiceNumber, registerPayment,
       addClient, updateClient, getClientBalance,
-      updatePayrollParams, calculatePayrollForUser
+      updatePayrollParams, calculatePayrollForUser,
+      createFicha, confirmFicha, lockFicha, updateFicha, deleteFicha, createInitialStock, updateStockAlarm, getAuditLogsForTable,
+      addCostCenter, updateCostCenter, deleteCostCenter,
+      createPendingInvoiceItem, updatePendingInvoiceItem, deletePendingInvoiceItem, linkInvoiceToPendingItem,
+      createCreditNote, updateCreditNote,
+      updateClientExtended, getClientCreditStatus,
+      generateSalesReport, generateFinancialReport, generateProfitabilityReport
     }}>
       {children}
     </LogisticsContext.Provider>

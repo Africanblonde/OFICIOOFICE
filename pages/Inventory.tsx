@@ -5,18 +5,22 @@ import { MapPin, Plus, Box, Save, X, Truck, Trash2 } from 'lucide-react';
 import { ItemCondition, ItemType } from '../types';
 
 export const Inventory = () => {
-    const { locations, items, inventory, currentUser, selectedDepartmentId, registerNewItem, addToInventory, createRequisition, itemTypes, measureUnits, getItemName, isAdminOrGM, deleteItem } = useLogistics();
+    const { locations, items, inventory, currentUser, selectedDepartmentId, registerNewItem, addToInventory, createRequisition, itemTypes, measureUnits, getItemName, isAdminOrGM, deleteItem, allUsers, createFicha, updateItem } = useLogistics();
     const [filterLoc, setFilterLoc] = useState(selectedDepartmentId || currentUser?.locationId || 'all');
 
     // Modals state
     const [isNewItemModalOpen, setIsNewItemModalOpen] = useState(false);
     const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+    const [isDeliverModalOpen, setIsDeliverModalOpen] = useState(false);
     const [isDeleteItemModalOpen, setIsDeleteItemModalOpen] = useState(false);
+    const [isEditItemModalOpen, setIsEditItemModalOpen] = useState(false);
     const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+    const [itemToEdit, setItemToEdit] = useState<any | null>(null);
+    const [itemToDeliver, setItemToDeliver] = useState<string | null>(null);
 
     // Form states with Price
-    const [newItemData, setNewItemData] = useState({ name: '', sku: '', itemTypeId: '', unit: '', qty: 1, locationId: null as string | null, unitPrice: 0 });
+    const [newItemData, setNewItemData] = useState({ name: '', sku: '', itemTypeId: '', unit: '', qty: 1, locationId: null as string | null, unitPrice: 0, isForSale: true });
     const [addStockData, setAddStockData] = useState({ itemId: '', qty: 1, locationId: null as string | null, unitPrice: 0 });
 
     // Request from Stock Form State
@@ -59,9 +63,9 @@ export const Inventory = () => {
         const category = typeDef ? typeDef.name : 'Geral';
         const behavior = typeDef ? typeDef.behavior : ItemType.ASSET;
 
-        registerNewItem(newItemData.name, newItemData.sku, category, unit, behavior, newItemData.qty, locId, newItemData.unitPrice);
+        registerNewItem(newItemData.name, newItemData.sku, category, unit, behavior, newItemData.qty, locId, newItemData.unitPrice, newItemData.isForSale);
         setIsNewItemModalOpen(false);
-        setNewItemData({ name: '', sku: '', itemTypeId: '', unit: '', qty: 1, locationId: null, unitPrice: 0 });
+        setNewItemData({ name: '', sku: '', itemTypeId: '', unit: '', qty: 1, locationId: null, unitPrice: 0, isForSale: true });
     };
 
     const handleAddStock = (e: React.FormEvent) => {
@@ -192,14 +196,34 @@ export const Inventory = () => {
                                 <Truck size={14} /> Solicitar
                             </button>
 
-                            {/* Delete button for admin */}
+                            {/* New Deliver Button */}
+                            <button
+                                onClick={() => { setItemToDeliver(record.itemId); setIsDeliverModalOpen(true); }}
+                                className="mt-2 w-full bg-emerald-50 text-emerald-700 py-2 rounded flex items-center justify-center gap-2 hover:bg-emerald-100 transition text-sm font-bold border border-emerald-100 shadow-sm"
+                            >
+                                <Box size={14} /> Entregar a Pessoa
+                            </button>
+
+                            {/* Admin Buttons */}
                             {isAdminOrGM && (
-                                <button
-                                    onClick={() => handleDeleteItem(record.itemId)}
-                                    className="mt-2 w-full bg-red-50 text-red-600 py-2 rounded flex items-center justify-center gap-2 hover:bg-red-100 transition text-sm font-medium border border-red-200"
-                                >
-                                    <Trash2 size={14} /> Apagar Definição
-                                </button>
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                    <button
+                                        onClick={() => {
+                                            const itemObj = items.find(i => i.id === record.itemId);
+                                            setItemToEdit(itemObj);
+                                            setIsEditItemModalOpen(true);
+                                        }}
+                                        className="bg-blue-50 text-blue-600 py-2 rounded flex items-center justify-center gap-2 hover:bg-blue-100 transition text-sm font-medium border border-blue-200"
+                                    >
+                                        <Save size={14} /> Editar
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteItem(record.itemId)}
+                                        className="bg-red-50 text-red-600 py-2 rounded flex items-center justify-center gap-2 hover:bg-red-100 transition text-sm font-medium border border-red-200"
+                                    >
+                                        <Trash2 size={14} /> Apagar
+                                    </button>
+                                </div>
                             )}
                         </div>
                     );
@@ -265,10 +289,10 @@ export const Inventory = () => {
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Preço Un. (MZN)</label>
                                     <input
                                         aria-label="Preço Un. (MZN)"
-                                        required type="number" min="0"
+                                        required type="number" min="0" step="0.01"
                                         className="w-full border rounded p-2 bg-white text-gray-900"
                                         value={newItemData.unitPrice}
-                                        onChange={e => setNewItemData({ ...newItemData, unitPrice: parseFloat(e.target.value) })}
+                                        onChange={e => setNewItemData({ ...newItemData, unitPrice: parseFloat(e.target.value) || 0 })}
                                     />
                                 </div>
                             </div>
@@ -293,6 +317,18 @@ export const Inventory = () => {
                                         <input aria-label="Quantidade" type="number" min="0" className="w-full border rounded p-2 bg-white text-gray-900" value={newItemData.qty} onChange={e => setNewItemData({ ...newItemData, qty: parseInt(e.target.value) })} />
                                     </div>
                                 </div>
+                            </div>
+                            <div className="flex items-center gap-2 mt-4">
+                                <input
+                                    type="checkbox"
+                                    id="isForSale"
+                                    checked={newItemData.isForSale}
+                                    onChange={e => setNewItemData({ ...newItemData, isForSale: e.target.checked })}
+                                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label htmlFor="isForSale" className="text-sm font-medium text-gray-700">
+                                    Disponível para venda no POS
+                                </label>
                             </div>
                             <div className="flex justify-end gap-2 mt-4">
                                 <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-medium w-full">Cadastrar</button>
@@ -338,7 +374,7 @@ export const Inventory = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Preço Un. (MZN)</label>
-                                    <input aria-label="Preço Un. (MZN)" required type="number" min="0" className="w-full border rounded p-2 bg-white text-gray-900" value={addStockData.unitPrice} onChange={e => setAddStockData({ ...addStockData, unitPrice: parseFloat(e.target.value) })} />
+                                    <input aria-label="Preço Un. (MZN)" required type="number" min="0" step="0.01" className="w-full border rounded p-2 bg-white text-gray-900" value={addStockData.unitPrice} onChange={e => setAddStockData({ ...addStockData, unitPrice: parseFloat(e.target.value) || 0 })} />
                                 </div>
                             </div>
                             <p className="text-xs text-gray-500">Isso registrará uma entrada contábil e atualizará o patrimônio.</p>
@@ -440,6 +476,134 @@ export const Inventory = () => {
                                 <Trash2 size={16} /> Apagar
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+            {/* Delivery Modal (Issue to Person) */}
+            {isDeliverModalOpen && itemToDeliver && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+                        <div className="bg-emerald-600 p-6 text-white flex justify-between items-center">
+                            <div>
+                                <h3 className="text-xl font-bold">Entregar Material</h3>
+                                <p className="text-emerald-100 text-[10px] uppercase font-bold tracking-widest mt-1">Saída direta para funcionário</p>
+                            </div>
+                            <button onClick={() => setIsDeliverModalOpen(false)} className="hover:bg-white/10 p-1 rounded-full"><X size={20} /></button>
+                        </div>
+                        <div className="p-6">
+                            <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                const form = e.target as any;
+                                const personId = form.person.value;
+                                const qty = parseFloat(form.qty.value);
+                                const item = items.find(i => i.id === itemToDeliver);
+
+                                if (!personId) { alert("Selecione uma pessoa."); return; }
+
+                                await createFicha({
+                                    tipo: 'ferramentas', // Default, logic can be smarter
+                                    entidade_id: personId,
+                                    entidade_tipo: 'trabalhador',
+                                    data: new Date().toISOString().split('T')[0],
+                                    produto_id: itemToDeliver,
+                                    produto: item?.name || '',
+                                    quantidade: qty,
+                                    unidade: item?.unit || 'Unidade',
+                                    estado: 'confirmado'
+                                });
+                                setIsDeliverModalOpen(false);
+                            }} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Item Selecionado</label>
+                                    <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-gray-800">
+                                        {items.find(i => i.id === itemToDeliver)?.name}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Beneficiário (Pessoa)</label>
+                                    <select name="person" required className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900">
+                                        <option value="">Selecione um funcionário...</option>
+                                        {allUsers.map(u => (
+                                            <option key={u.id} value={u.id}>{u.name} ({u.jobTitle || 'Sem cargo'})</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Quantidade</label>
+                                    <div className="flex gap-2">
+                                        <input name="qty" type="number" step="0.01" defaultValue="1" className="flex-1 p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold" />
+                                        <div className="px-4 flex items-center bg-gray-50 border border-gray-200 rounded-xl text-gray-500 text-sm">
+                                            {items.find(i => i.id === itemToDeliver)?.unit}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl hover:bg-emerald-700 shadow-lg shadow-emerald-100 uppercase tracking-widest text-xs mt-4">
+                                    Confirmar Entrega
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Edit Item Modal */}
+            {isEditItemModalOpen && itemToEdit && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-900">Editar Definição do Item</h3>
+                            <button onClick={() => setIsEditItemModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+                        </div>
+                        <form onSubmit={async (e) => {
+                            e.preventDefault();
+                            await updateItem(itemToEdit.id, itemToEdit);
+                            setIsEditItemModalOpen(false);
+                        }} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Nome do Item</label>
+                                <input required type="text" className="w-full border rounded p-2 bg-white text-gray-900" value={itemToEdit.name} onChange={e => setItemToEdit({ ...itemToEdit, name: e.target.value })} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+                                    <input required type="text" className="w-full border rounded p-2 bg-white text-gray-900" value={itemToEdit.sku} onChange={e => setItemToEdit({ ...itemToEdit, sku: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Unidade</label>
+                                    <select
+                                        className="w-full border rounded p-2 bg-white text-gray-900"
+                                        value={itemToEdit.unit}
+                                        onChange={e => setItemToEdit({ ...itemToEdit, unit: e.target.value })}
+                                    >
+                                        {measureUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Patrimônio</label>
+                                <select
+                                    className="w-full border rounded p-2 bg-white text-gray-900"
+                                    value={itemToEdit.type}
+                                    onChange={e => setItemToEdit({ ...itemToEdit, type: e.target.value })}
+                                >
+                                    <option value={ItemType.ASSET}>Ativo (Permanente)</option>
+                                    <option value={ItemType.LIABILITY}>Passivo (Consumível)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Preço Sugerido (Venda/Valor)</label>
+                                <input type="number" step="0.01" className="w-full border rounded p-2 bg-white text-gray-900" value={itemToEdit.price} onChange={e => setItemToEdit({ ...itemToEdit, price: parseFloat(e.target.value) })} />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <input type="checkbox" id="editIsForSale" checked={itemToEdit.is_for_sale} onChange={e => setItemToEdit({ ...itemToEdit, is_for_sale: e.target.checked })} />
+                                <label htmlFor="editIsForSale" className="text-sm text-gray-700">Disponível para Venda</label>
+                            </div>
+                            <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 shadow-lg mt-4">
+                                Salvar Alterações
+                            </button>
+                        </form>
                     </div>
                 </div>
             )}

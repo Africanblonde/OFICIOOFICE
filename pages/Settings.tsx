@@ -28,6 +28,7 @@ export const Settings = () => {
     setDefaultCurrency,
     hasPermission,
     addUser
+    , resetLocalData
   } = useLogistics();
 
   // Local state for inputs
@@ -141,6 +142,23 @@ export const Settings = () => {
     } catch (error) {
       console.error('Erro ao criar utilizador:', error);
       alert(`Erro ao criar utilizador: ${(error as Error).message}`);
+    }
+  };
+
+  const handleResetLocal = () => {
+    if (!canManage) return;
+    if (!window.confirm('Isto irá apagar TODOS os dados locais (localStorage e estados). Continuar?')) return;
+    const confirmText = window.prompt('Por favor, digite RESET para confirmar:');
+    if (confirmText === 'RESET') {
+      try {
+        resetLocalData();
+        alert('Dados locais reiniciados.');
+      } catch (err) {
+        console.error('Erro ao reiniciar dados locais:', err);
+        alert('Erro ao reiniciar dados locais. Veja o console.');
+      }
+    } else {
+      alert('Confirmação inválida. Operação cancelada.');
     }
   };
 
@@ -607,6 +625,23 @@ export const Settings = () => {
                 </span>
               ))}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Danger Zone */}
+      <div className="mt-6">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6">
+          <h3 className="text-lg font-bold text-red-700 mb-2">Danger Zone</h3>
+          <p className="text-sm text-red-600 mb-4">Ações nesta secção podem apagar dados locais do navegador. Use com cuidado.</p>
+          <div className="flex gap-3">
+            <button
+              onClick={handleResetLocal}
+              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 font-medium"
+              title="Resetar dados locais"
+            >
+              Resetar Dados Locais
+            </button>
           </div>
         </div>
       </div>

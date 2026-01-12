@@ -119,6 +119,7 @@ export const POS = () => {
             };
         })
         .filter(item => item.id && item.name && item.price) // Ensure valid item
+        .filter(item => item.is_for_sale !== false) // Only show items marked for sale
         .filter(item => item.name?.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const addToCart = (item: any) => {
@@ -154,9 +155,9 @@ export const POS = () => {
     };
 
     const selectPosClient = (client: Client) => {
-        setClientName(client.name);
+        setClientName(client.name || client.nome || '');
         setClientNuit(client.nuit || '');
-        setSelectedClientId(client.id);
+        setSelectedClientId(client.id || '');
     };
 
     const cartTotal = cart.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0);
@@ -166,7 +167,8 @@ export const POS = () => {
     const handleCheckout = () => {
         if (cart.length === 0) return;
 
-        // Instead of processing immediately, we prepare a Draft Invoice and open the modal
+        // Task 1.4: Auto-link POS items to invoice
+        // Ensure all items have proper itemId and are tracking inventory items
         const draftInvoice: Partial<Invoice> = {
             tipo: 'FATURA_RECIBO', // Default to Receipt since it's POS
             status: 'PAGA', // Assume Paid, but user can change in modal
@@ -178,18 +180,18 @@ export const POS = () => {
                 contacto: ''
             },
             itens: cart.map(item => ({
-                itemId: item.itemId,
+                itemId: item.itemId, // Maintain link to inventory item
                 descricao: item.name,
                 quantidade: item.quantity,
                 precoUnitario: item.unitPrice,
-                impostoPercent: 16 // Default VAT
+                impostoPercent: 16 // Task 1.1: Default VAT to 16% MZN
             })),
             pagamentos: [{
                 data: new Date().toISOString(),
                 valor: grandTotal,
                 modalidade: paymentMethod
             }],
-            observacoes: 'Venda via POS Terminal'
+            observacoes: 'Venda via POS Terminal - Rastreabilidade: Itens do inventário'
         };
 
         setEditingInvoice(draftInvoice);
@@ -586,8 +588,8 @@ export const POS = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 text-sm">
-                                {clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase())).map(client => {
-                                    const debt = getClientBalance(client.id);
+                                {clients.filter(c => (c.name || c.nome || '').toLowerCase().includes(clientSearch.toLowerCase())).map(client => {
+                                    const debt = getClientBalance(client.id || '');
                                     return (
                                         <tr key={client.id} className="hover:bg-slate-50">
                                             <td className="p-4">

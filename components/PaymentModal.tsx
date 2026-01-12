@@ -48,7 +48,7 @@ export default function PaymentModal({ invoice, onClose, onConfirm }: Props) {
             <h3 className="font-bold flex items-center gap-2">
                 <DollarSign size={20} /> Receber Pagamento
             </h3>
-            <button onClick={onClose} className="hover:bg-blue-700 p-1 rounded"><X size={20}/></button>
+            <button onClick={onClose} className="hover:bg-blue-700 p-1 rounded" title="Fechar"><X size={20}/></button>
         </div>
         
         <div className="p-6">

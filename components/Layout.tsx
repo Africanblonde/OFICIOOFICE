@@ -22,7 +22,8 @@ import {
   ShoppingCart,
   Shield,
   Banknote,
-  LogOut
+  LogOut,
+  DollarSign
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
@@ -226,6 +227,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             </button>
           )}
 
+          {hasPermission('VIEW_INVENTORY') && (
+            <button
+              onClick={() => handleTabClick('fichas')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'fichas' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
+            >
+              <ClipboardCheck size={20} />
+              <span className="font-medium text-sm">Fichas Individuais</span>
+            </button>
+          )}
+
           {hasPermission('VIEW_PERFORMANCE') && (
             <button
               onClick={() => handleTabClick('performance')}
@@ -237,13 +248,47 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
           )}
 
           {hasPermission('VIEW_POS') && (
-            <button
-              onClick={() => handleTabClick('pos')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'pos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
-            >
-              <ShoppingCart size={20} />
-              <span className="font-medium text-sm">POS & Financeiro</span>
-            </button>
+            <div className="space-y-1">
+              <button
+                onClick={() => handleTabClick('pos')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'pos' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
+              >
+                <ShoppingCart size={20} />
+                <span className="font-medium text-sm">POS & Financeiro</span>
+              </button>
+
+              {/* Sub-links: Financial modules */}
+              {isAdminOrGM && (
+                <div className="pl-8 space-y-1">
+                  <button
+                    onClick={() => handleTabClick('contas-receber')}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'contas-receber' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
+                    title="Contas a Receber"
+                  >
+                    <DollarSign size={16} />
+                    <span>Contas a Receber</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleTabClick('expense-approvals')}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'expense-approvals' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
+                    title="Aprovação de Despesas"
+                  >
+                    <DollarSign size={16} />
+                    <span>Aprovação de Despesas</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleTabClick('expense-reports')}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${activeTab === 'expense-reports' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
+                    title="Relatórios de Orçamento"
+                  >
+                    <DollarSign size={16} />
+                    <span>Relatórios de Orçamento</span>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {hasPermission('VIEW_PATRIMONY') && (
@@ -275,6 +320,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
               <span className="font-medium text-sm">Folha Salarial</span>
             </button>
           )}
+
+          
 
           {hasPermission('VIEW_SETTINGS') && (
             <button
@@ -358,11 +405,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
                       activeTab === 'performance' ? 'Desempenho' :
                         activeTab === 'hr' ? 'RH' :
                           activeTab === 'payroll' ? 'Folha Salarial' :
-                            activeTab === 'settings' ? 'Definições' :
-                              activeTab === 'patrimony' ? 'Patrimônio' :
-                                activeTab === 'pos' ? 'POS & Vendas' :
-                                  activeTab === 'permissions' ? 'Permissões' :
-                                    'Office Florestal'}
+                            activeTab === 'contas-receber' ? 'Contas a Receber' :
+                                activeTab === 'expense-approvals' ? 'Aprovação de Despesas' :
+                                  activeTab === 'expense-reports' ? 'Relatórios de Orçamento' :
+                                    activeTab === 'settings' ? 'Definições' :
+                                      activeTab === 'patrimony' ? 'Patrimônio' :
+                                        activeTab === 'pos' ? 'POS & Vendas' :
+                                          activeTab === 'permissions' ? 'Permissões' :
+                                            'Office Florestal'}
               </h2>
               {selectedDepartmentId && (
                 <div className="flex items-center text-xs text-blue-600 font-medium">
@@ -427,3 +477,4 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
     </div>
   );
 };
+

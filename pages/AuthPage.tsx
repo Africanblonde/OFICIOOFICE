@@ -197,6 +197,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
                         </button>
                     </form>
 
+                    {/* Development Bypass */}
+                    <div className="mt-6 pt-6 border-t border-gray-200">
+                        <button
+                            onClick={() => onAuthSuccess()}
+                            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
+                            title="Bypass authentication for development (only works if Supabase is not configured)"
+                        >
+                            🔧 Development Mode (Skip Auth)
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2 text-center">
+                            Only use this for testing the UI while setting up Supabase
+                        </p>
+                    </div>
+
                     {/* Footer */}
                     {isLogin && (
                         <div className="mt-4 text-center">

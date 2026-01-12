@@ -91,7 +91,22 @@ export default function InvoiceModal({ open, onClose, initial, onSave, companyDe
 
   const addItem = () => {
     if (!novoItem.descricao || novoItem.quantidade <= 0) return;
-    setInvoice((prev) => ({ ...prev, itens: [...prev.itens, novoItem] }));
+    
+    // Task 1.1: Validate VAT (16% default, or valid exempt items)
+    const vat = novoItem.impostoPercent ?? 16;
+    if (vat < 0) {
+      alert('IVA não pode ser negativo');
+      return;
+    }
+    
+    // Task 1.2: Prevent editing after EMITIDA
+    if (invoice.status !== 'RASCUNHO') {
+      alert('Não é possível adicionar itens após emissão da fatura');
+      return;
+    }
+
+    const itemWithVat = { ...novoItem, impostoPercent: vat };
+    setInvoice((prev) => ({ ...prev, itens: [...prev.itens, itemWithVat] }));
     setNovoItem({ descricao: "", quantidade: 1, precoUnitario: 0, impostoPercent: 16 });
   };
 
@@ -116,10 +131,10 @@ export default function InvoiceModal({ open, onClose, initial, onSave, companyDe
           ...prev,
           cliente: {
               id: client.id,
-              nome: client.name,
+              nome: client.name || client.nome || '',
               nuit: client.nuit || '',
-              endereco: client.address || '',
-              contacto: client.contact || ''
+              endereco: client.address || client.endereco || '',
+              contacto: client.contact || client.contacto || ''
           }
       }));
       setShowClientList(false);
@@ -200,7 +215,7 @@ export default function InvoiceModal({ open, onClose, initial, onSave, companyDe
     win.document.close();
   };
 
-  const filteredClients = clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  const filteredClients = clients.filter(c => (c.name || c.nome || '').toLowerCase().includes(clientSearch.toLowerCase()));
 
   return (
     <>
@@ -257,9 +272,12 @@ export default function InvoiceModal({ open, onClose, initial, onSave, companyDe
           <div className="border border-gray-200 p-4 rounded-lg relative">
             <div className="flex justify-between items-center mb-2">
                  <div className="text-xs font-bold text-gray-400 uppercase">Cliente / Destinatário</div>
-                 <button onClick={() => setShowClientList(!showClientList)} className="text-xs text-blue-600 font-medium flex items-center gap-1">
-                    <Search size={12}/> Buscar Registrado
-                 </button>
+                 {/* Task 1.2: Disable client selection if EMITIDA */}
+                 {invoice.status === 'RASCUNHO' && (
+                   <button onClick={() => setShowClientList(!showClientList)} className="text-xs text-blue-600 font-medium flex items-center gap-1">
+                      <Search size={12}/> Buscar Registrado
+                   </button>
+                 )}
             </div>
             
             {showClientList && (
@@ -283,19 +301,19 @@ export default function InvoiceModal({ open, onClose, initial, onSave, companyDe
             <div className="flex flex-col gap-2">
               <div className="relative">
                   <User size={16} className="absolute top-2.5 left-2.5 text-gray-400" />
-                  <input className="border border-gray-300 p-2 pl-8 rounded text-sm w-full font-bold focus:outline-blue-500 bg-white text-gray-900" placeholder="Nome do cliente"
+                  <input disabled={invoice.status !== 'RASCUNHO'} className={`border border-gray-300 p-2 pl-8 rounded text-sm w-full font-bold focus:outline-blue-500 bg-white text-gray-900 ${invoice.status !== 'RASCUNHO' ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`} placeholder="Nome do cliente"
                         value={invoice.cliente.nome}
                         onChange={(e)=>setInvoice({...invoice, cliente:{...invoice.cliente, nome:e.target.value}})} />
               </div>
               <div className="grid grid-cols-2 gap-2">
-                  <input className="border border-gray-300 p-2 rounded text-sm bg-white text-gray-900" placeholder="NUIT"
+                  <input disabled={invoice.status !== 'RASCUNHO'} className={`border border-gray-300 p-2 rounded text-sm bg-white text-gray-900 ${invoice.status !== 'RASCUNHO' ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`} placeholder="NUIT"
                         value={invoice.cliente.nuit ?? ""}
                         onChange={(e)=>setInvoice({...invoice, cliente:{...invoice.cliente, nuit:e.target.value}})} />
-                  <input className="border border-gray-300 p-2 rounded text-sm bg-white text-gray-900" placeholder="Contacto"
+                  <input disabled={invoice.status !== 'RASCUNHO'} className={`border border-gray-300 p-2 rounded text-sm bg-white text-gray-900 ${invoice.status !== 'RASCUNHO' ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`} placeholder="Contacto"
                         value={invoice.cliente.contacto ?? ""}
                         onChange={(e)=>setInvoice({...invoice, cliente:{...invoice.cliente, contacto:e.target.value}})} />
               </div>
-              <input className="border border-gray-300 p-2 rounded text-sm bg-white text-gray-900" placeholder="Endereço"
+              <input disabled={invoice.status !== 'RASCUNHO'} className={`border border-gray-300 p-2 rounded text-sm bg-white text-gray-900 ${invoice.status !== 'RASCUNHO' ? 'bg-gray-100 cursor-not-allowed opacity-60' : ''}`} placeholder="Endereço"
                      value={invoice.cliente.endereco ?? ""}
                      onChange={(e)=>setInvoice({...invoice, cliente:{...invoice.cliente, endereco:e.target.value}})} />
             </div>
@@ -323,9 +341,14 @@ export default function InvoiceModal({ open, onClose, initial, onSave, companyDe
                             value={novoItem.precoUnitario} onChange={(e)=>setNovoItem({...novoItem, precoUnitario:+e.target.value})}/>
                 </div>
                 <div className="col-span-2">
-                    <label className="text-[10px] text-gray-500">IVA%</label>
-                    <input aria-label="Percentagem de imposto IVA" className="w-full border p-2 rounded text-sm bg-white text-gray-900" type="number" step="0.01"
-                            value={novoItem.impostoPercent} onChange={(e)=>setNovoItem({...novoItem, impostoPercent:+e.target.value})}/>
+                    <label className="text-[10px] text-gray-500">IVA% <span className="text-red-500" title="Obrigatório 16% (MZN)">*</span></label>
+                    <div className="relative">
+                        <input aria-label="Percentagem de imposto IVA - Obrigatório 16% para Moçambique" className="w-full border p-2 rounded text-sm bg-white text-gray-900" type="number" step="0.01"
+                                value={novoItem.impostoPercent ?? 16} onChange={(e)=>setNovoItem({...novoItem, impostoPercent:+e.target.value || 16})}/>
+                        {(novoItem.impostoPercent ?? 16) !== 16 && (
+                            <span className="text-[9px] text-orange-500 absolute -bottom-4 left-0">⚠️ 16% é padrão em MZN</span>
+                        )}
+                    </div>
                 </div>
                 <div className="col-span-1">
                     <button aria-label="Adicionar item à fatura" title="Adicionar item" className="w-full bg-gray-800 text-white rounded p-2 flex justify-center" onClick={addItem}><Plus size={18}/></button>
@@ -431,76 +454,69 @@ export default function InvoiceModal({ open, onClose, initial, onSave, companyDe
     )}
 
     {/* ÁREA INVISÍVEL PARA GERAÇÃO DO PDF */}
-    <div style={{display:'none'}}>
-        <div ref={printRef} className="sheet" style={{
-            width: '210mm', 
-            minHeight: '297mm', 
-            padding: '20mm',
-            backgroundColor: 'white',
-            fontFamily: 'Helvetica, Arial, sans-serif',
-            color: '#333'
-        }}>
-            <div className="header" style={{display:'flex', justifyContent:'space-between', marginBottom:'30px', borderBottom:'2px solid #eee', paddingBottom:'20px'}}>
+    <div className="invoice-pdf-hidden">
+        <div ref={printRef} className="invoice-pdf-container">
+            <div className="invoice-pdf-header">
                 <div>
-                    <h1 className="title" style={{fontSize:'24px', fontWeight:'bold', textTransform:'uppercase', margin:0}}>{invoice.tipo.replace("_", " ")}</h1>
-                    <div className="meta" style={{color:'#666', fontSize:'14px', marginTop:'5px'}}>Nº Documento: <strong>{invoice.numero}</strong></div>
-                    <div className="meta" style={{color:'#666', fontSize:'14px'}}>Data Emissão: {invoice.dataEmissao}</div>
-                    {invoice.vencimento && <div className="meta" style={{color:'#666', fontSize:'14px'}}>Vencimento: {invoice.vencimento}</div>}
+                    <h1 className="invoice-pdf-title">{invoice.tipo.replace("_", " ")}</h1>
+                    <div className="invoice-pdf-meta">Nº Documento: <strong>{invoice.numero}</strong></div>
+                    <div className="invoice-pdf-meta">Data Emissão: {invoice.dataEmissao}</div>
+                    {invoice.vencimento && <div className="invoice-pdf-meta">Vencimento: {invoice.vencimento}</div>}
                 </div>
-                <div className="right" style={{textAlign:'right'}}>
-                    <div className="section-title" style={{fontSize:'12px', fontWeight:'bold', textTransform:'uppercase', color:'#888', marginBottom:'5px'}}>EMITIDO POR</div>
-                    <div style={{fontWeight:'bold'}}>{invoice.empresa.nome}</div>
-                    <div style={{fontSize:'14px'}}>NUIT: {invoice.empresa.nuit}</div>
-                    <div style={{fontSize:'14px'}}>{invoice.empresa.endereco}</div>
-                    {invoice.empresa.contacto && <div style={{fontSize:'14px'}}>{invoice.empresa.contacto}</div>}
+                <div className="invoice-pdf-right">
+                    <div className="invoice-pdf-section-title">EMITIDO POR</div>
+                    <div className="invoice-pdf-company-name">{invoice.empresa.nome}</div>
+                    <div className="invoice-pdf-company-detail">NUIT: {invoice.empresa.nuit}</div>
+                    <div className="invoice-pdf-company-detail">{invoice.empresa.endereco}</div>
+                    {invoice.empresa.contacto && <div className="invoice-pdf-company-detail">{invoice.empresa.contacto}</div>}
                 </div>
             </div>
 
-            <div style={{marginBottom: '30px', padding:'15px', backgroundColor:'#f9f9f9', borderRadius:'5px'}}>
-                <div className="section-title" style={{fontSize:'12px', fontWeight:'bold', textTransform:'uppercase', color:'#888', marginBottom:'5px'}}>CLIENTE</div>
-                <div style={{fontWeight:'bold', fontSize:'16px'}}>{invoice.cliente.nome}</div>
-                {invoice.cliente.nuit && <div style={{fontSize:'14px'}}>NUIT: {invoice.cliente.nuit}</div>}
-                {invoice.cliente.endereco && <div style={{fontSize:'14px'}}>{invoice.cliente.endereco}</div>}
-                {invoice.cliente.contacto && <div style={{fontSize:'14px'}}>{invoice.cliente.contacto}</div>}
+            <div className="invoice-pdf-client-box">
+                <div className="invoice-pdf-section-title">CLIENTE</div>
+                <div className="invoice-pdf-client-name">{invoice.cliente.nome}</div>
+                {invoice.cliente.nuit && <div className="invoice-pdf-client-detail">NUIT: {invoice.cliente.nuit}</div>}
+                {invoice.cliente.endereco && <div className="invoice-pdf-client-detail">{invoice.cliente.endereco}</div>}
+                {invoice.cliente.contacto && <div className="invoice-pdf-client-detail">{invoice.cliente.contacto}</div>}
             </div>
 
-            <table style={{width:'100%', borderCollapse:'collapse', marginBottom:'20px'}}>
+            <table className="invoice-pdf-table">
                 <thead>
-                <tr style={{backgroundColor:'#eee'}}>
-                    <th style={{padding:'10px', textAlign:'left', borderBottom:'1px solid #ddd'}}>Descrição</th>
-                    <th style={{padding:'10px', textAlign:'right', borderBottom:'1px solid #ddd'}}>Qtd</th>
-                    <th style={{padding:'10px', textAlign:'right', borderBottom:'1px solid #ddd'}}>Preço Un.</th>
-                    <th style={{padding:'10px', textAlign:'right', borderBottom:'1px solid #ddd'}}>IVA %</th>
-                    <th style={{padding:'10px', textAlign:'right', borderBottom:'1px solid #ddd'}}>Total</th>
+                <tr>
+                    <th>Descrição</th>
+                    <th>Qtd</th>
+                    <th>Preço Un.</th>
+                    <th>IVA %</th>
+                    <th>Total</th>
                 </tr>
                 </thead>
                 <tbody>
                 {invoice.itens.map((i, idx)=>(
                     <tr key={idx}>
-                    <td style={{padding:'10px', borderBottom:'1px solid #eee'}}>{i.descricao}</td>
-                    <td style={{padding:'10px', textAlign:'right', borderBottom:'1px solid #eee'}}>{i.quantidade}</td>
-                    <td style={{padding:'10px', textAlign:'right', borderBottom:'1px solid #eee'}}>{i.precoUnitario.toFixed(2)}</td>
-                    <td style={{padding:'10px', textAlign:'right', borderBottom:'1px solid #eee'}}>{(i.impostoPercent ?? 0).toFixed(0)}%</td>
-                    <td style={{padding:'10px', textAlign:'right', borderBottom:'1px solid #eee'}}>{(i.quantidade*i.precoUnitario*(1+(i.impostoPercent??0)/100)).toFixed(2)}</td>
+                    <td>{i.descricao}</td>
+                    <td>{i.quantidade}</td>
+                    <td>{i.precoUnitario.toFixed(2)}</td>
+                    <td>{(i.impostoPercent ?? 0).toFixed(0)}%</td>
+                    <td>{(i.quantidade*i.precoUnitario*(1+(i.impostoPercent??0)/100)).toFixed(2)}</td>
                     </tr>
                 ))}
                 </tbody>
             </table>
 
-            <div className="totals" style={{display:'flex', justifyContent:'flex-end'}}>
-                <div className="totals-box" style={{width:'250px'}}>
-                    <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0'}}><span>Subtotal:</span> <span>{totals.subtotal.toFixed(2)} {invoice.moeda}</span></div>
-                    <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0'}}><span>Impostos:</span> <span>{totals.impostos.toFixed(2)} {invoice.moeda}</span></div>
-                    <div style={{display:'flex', justifyContent:'space-between', padding:'10px 0', borderTop:'2px solid #333', fontWeight:'bold', fontSize:'16px'}}><span>Total:</span> <span>{totals.total.toFixed(2)} {invoice.moeda}</span></div>
+            <div className="invoice-pdf-totals">
+                <div className="invoice-pdf-totals-box">
+                    <div className="invoice-pdf-totals-row"><span>Subtotal:</span> <span>{totals.subtotal.toFixed(2)} {invoice.moeda}</span></div>
+                    <div className="invoice-pdf-totals-row"><span>Impostos:</span> <span>{totals.impostos.toFixed(2)} {invoice.moeda}</span></div>
+                    <div className="invoice-pdf-totals-total"><span>Total:</span> <span>{totals.total.toFixed(2)} {invoice.moeda}</span></div>
                     {valorPago(invoice.pagamentos) > 0 && (
-                         <div style={{display:'flex', justifyContent:'space-between', padding:'5px 0', marginTop:'10px', borderTop:'1px dashed #ccc'}}>
+                         <div className="invoice-pdf-totals-paid">
                             <span>Valor Pago:</span> <span>{valorPago(invoice.pagamentos).toFixed(2)} {invoice.moeda}</span>
                          </div>
                     )}
                 </div>
             </div>
             
-            <div style={{marginTop: '50px', fontSize: '12px', color: '#666', borderTop: '1px solid #eee', paddingTop: '10px'}}>
+            <div className="invoice-pdf-footer">
                 <p>Processado por OFFICIO Software. Documento gerado eletronicamente.</p>
                 {invoice.observacoes && <p>Obs: {invoice.observacoes}</p>}
             </div>

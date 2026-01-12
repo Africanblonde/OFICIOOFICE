@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Configuração usando variáveis de ambiente do Vite
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://kwnbyiqzrphkembkwyvd.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3bmJ5aXF6cnBoa2VtYmt3eXZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQwNjcyNDYsImV4cCI6MjA3OTY0MzI0Nn0.EZOCsrZoudDfjQrWS0OmNgj-MPCO2X1_8mhiiWevS_g';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('Missing Supabase environment variables. Please check your .env.local file.');
+}
 
 // Cliente único para uso em toda a aplicação
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

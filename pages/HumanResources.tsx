@@ -14,7 +14,7 @@ export const HumanResources = () => {
 
     // Modal State
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
-    const [activeModalTab, setActiveModalTab] = useState<'summary' | 'history' | 'daily' | 'financial' | 'settings'>('summary');
+    const [activeModalTab, setActiveModalTab] = useState<'summary' | 'history' | 'daily' | 'financial' | 'settings' | 'fichas'>('summary');
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
@@ -340,120 +340,85 @@ export const HumanResources = () => {
             );
         }
 
-        // --- TAB: SETTINGS ---
-        if (activeModalTab === 'settings') {
-            const canEdit = isAdminOrGM;
+        // --- TAB: FICHAS (ENTREGAS) ---
+        if (activeModalTab === 'fichas') {
+            const { fichasIndividuais, createFicha, items, inventory } = useLogistics();
+            const userFichas = fichasIndividuais.filter(f => f.entidade_id === selectedUser.id);
+            const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
 
             return (
                 <div className="space-y-4">
-                    {!canEdit && (
-                        <div className="bg-yellow-50 text-yellow-800 p-3 rounded-lg flex items-center gap-2 text-sm border border-yellow-200">
-                            <Lock size={16} />
-                            Apenas Administradores podem alterar configurações salariais.
+                    <div className="flex justify-between items-center bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                        <div>
+                            <h4 className="font-bold text-emerald-800">Carga Individual / Ferramentas</h4>
+                            <p className="text-xs text-emerald-600">Histórico de materiais e EPIs entregues ao funcionário.</p>
+                        </div>
+                        <button
+                            onClick={() => setIsLocalModalOpen(true)}
+                            className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition flex items-center gap-2 text-sm font-bold shadow-sm"
+                        >
+                            <Plus size={16} /> Nova Entrega
+                        </button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
+                                <tr>
+                                    <th className="px-4 py-3">Data</th>
+                                    <th className="px-4 py-3">Produto</th>
+                                    <th className="px-4 py-3 text-center">Qtd</th>
+                                    <th className="px-4 py-3 text-center">Tipo</th>
+                                    <th className="px-4 py-3 text-center">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {userFichas.length === 0 ? (
+                                    <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">Nenhuma entrega registrada.</td></tr>
+                                ) : (
+                                    userFichas.map(f => (
+                                        <tr key={f.id} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3 text-gray-600">{formatFlexibleDate(f.data, { dateOnly: true })}</td>
+                                            <td className="px-4 py-3 font-medium text-gray-800">{f.produto}</td>
+                                            <td className="px-4 py-3 text-center font-bold text-emerald-600">{f.quantidade} {f.unidade}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-600 uppercase font-bold tracking-tighter">{f.tipo}</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded-[4px] text-[10px] font-bold ${f.estado === 'confirmado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                    {f.estado.toUpperCase()}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {isLocalModalOpen && (
+                        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-200">
+                                <div className="bg-emerald-600 p-6 text-white flex justify-between items-center">
+                                    <h3 className="text-xl font-bold">Nova Entrega para {selectedUser.name}</h3>
+                                    <button onClick={() => setIsLocalModalOpen(false)} className="hover:bg-white/10 p-1 rounded-full"><X size={24} /></button>
+                                </div>
+                                <div className="p-6">
+                                    {/* Simple Inline Form */}
+                                    <FichaQuickForm
+                                        userId={selectedUser.id}
+                                        items={items}
+                                        inventory={inventory}
+                                        onSave={async (data) => {
+                                            await createFicha(data);
+                                            setIsLocalModalOpen(false);
+                                        }}
+                                        onCancel={() => setIsLocalModalOpen(false)}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     )}
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Cargo / Função</label>
-                            <input
-                                type="text"
-                                placeholder="Ex: Operador de Campo"
-                                disabled={!canEdit}
-                                className="w-full border rounded p-2 text-sm bg-white text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
-                                value={settingsData.jobTitle || ''}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, jobTitle: e.target.value })}
-                            />                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Categoria (Role)</label>
-                            <select
-                                aria-label="Categoria (Role)"
-                                disabled={!canEdit}
-                                className="w-full border rounded p-2 text-sm bg-white text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
-                                value={settingsData.role}
-                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSettingsData({ ...settingsData, role: e.target.value as Role })}
-                            >
-                                <option value={Role.WORKER}>Operário</option>
-                                <option value={Role.MANAGER}>Gerente</option>
-                                <option value={Role.GENERAL_MANAGER}>Diretor Geral</option>
-                                <option value={Role.ADMIN}>Admin</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                        <h5 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-                            <DollarSign size={16} /> Parâmetros Salariais (MZN)
-                        </h5>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Valor Dia (D)</label>
-                                <input
-                                    aria-label="Valor Dia (D)"
-                                    type="number" step="0.1"
-                                    disabled={!canEdit}
-                                    className="w-full border rounded p-2 text-sm font-semibold text-gray-800 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                                    value={settingsData.dailyRate || 0}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, dailyRate: parseFloat(e.target.value) })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Valor Meio Dia (D/2)</label>
-                                <input
-                                    aria-label="Valor Meio Dia (D/2)"
-                                    type="number" step="0.1"
-                                    disabled={!canEdit}
-                                    className="w-full border rounded p-2 text-sm font-semibold text-gray-800 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                                    value={settingsData.halfDayRate || 0}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, halfDayRate: parseFloat(e.target.value) })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Penalidade Falta (F)</label>
-                                <input
-                                    aria-label="Penalidade Falta (F)"
-                                    type="number" step="0.1"
-                                    disabled={!canEdit}
-                                    className="w-full border rounded p-2 text-sm font-semibold text-red-600 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                                    value={settingsData.absencePenalty || 0}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, absencePenalty: parseFloat(e.target.value) })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-gray-500 mb-1">Bónus por Unidade Extra</label>
-                                <input
-                                    aria-label="Bónus por Unidade Extra"
-                                    type="number" step="0.1"
-                                    disabled={!canEdit}
-                                    className="w-full border rounded p-2 text-sm font-semibold text-green-600 bg-white disabled:bg-gray-100 disabled:text-gray-500"
-                                    value={settingsData.bonusPerUnit || 0}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, bonusPerUnit: parseFloat(e.target.value) })}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Meta Diária Padrão (Árvores/Produção)</label>
-                        <input
-                            aria-label="Meta Diária Padrão (Árvores/Produção)"
-                            type="number"
-                            disabled={!canEdit}
-                            className="w-full border rounded p-2 text-sm bg-blue-50 text-blue-900 font-bold border-blue-200 disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-200"
-                            value={settingsData.defaultDailyGoal || 0}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettingsData({ ...settingsData, defaultDailyGoal: parseFloat(e.target.value) })}
-                        />
-                    </div>
-
-                    <div className="pt-2">
-                        {canEdit && (
-                            <button
-                                onClick={handleSaveSettings}
-                                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center gap-2"
-                            >
-                                <Save size={16} /> Salvar Alterações
-                            </button>
-                        )}
-                    </div>
                 </div>
             );
         }
@@ -705,6 +670,11 @@ export const HumanResources = () => {
                             <button onClick={() => setActiveModalTab('financial')} className={`py-4 text-sm font-medium border-b-2 transition ${activeModalTab === 'financial' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                                 Financeiro
                             </button>
+                            <button onClick={() => setActiveModalTab('fichas')} className={`py-4 text-sm font-medium border-b-2 transition ${activeModalTab === 'fichas' ? 'border-emerald-600 text-emerald-600 underline' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                                <div className="flex items-center gap-1">
+                                    <FileText size={16} /> Ficha de Entregas
+                                </div>
+                            </button>
                             <button onClick={() => setActiveModalTab('settings')} className={`py-4 text-sm font-medium border-b-2 transition ${activeModalTab === 'settings' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
                                 Configurações
                             </button>
@@ -746,6 +716,138 @@ export const HumanResources = () => {
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+// --- QUICK DELIVERY FORM FOR HR ---
+const FichaQuickForm = ({ userId, items, inventory, onSave, onCancel }: any) => {
+    const [formData, setFormData] = useState({
+        tipo: 'ferramentas' as any,
+        entidade_id: userId,
+        entidade_tipo: 'trabalhador',
+        data: new Date().toISOString().split('T')[0],
+        produto_id: '',
+        produto: '',
+        quantidade: 1,
+        unidade: 'Unidade',
+        observacoes: ''
+    });
+
+    const [searchTerm, setSearchTerm] = useState('');
+    const [showResults, setShowResults] = useState(false);
+
+    const filteredItems = useMemo(() => {
+        if (!searchTerm) return [];
+        return items.filter((i: any) => i.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 5);
+    }, [items, searchTerm]);
+
+    const handleSelect = (item: any) => {
+        setFormData({
+            ...formData,
+            produto_id: item.id,
+            produto: item.name,
+            unidade: item.unit || 'Unidade'
+        });
+        setSearchTerm(item.name);
+        setShowResults(false);
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="relative">
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Procurar Produto</label>
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={e => { setSearchTerm(e.target.value); setShowResults(true); }}
+                        className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="Ex: Enxada, Bota, Combustível..."
+                    />
+                </div>
+                {showResults && filteredItems.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50">
+                        {filteredItems.map((it: any) => (
+                            <button
+                                key={it.id}
+                                onClick={() => handleSelect(it)}
+                                className="w-full text-left p-3 hover:bg-emerald-50 border-b border-gray-50 last:border-0"
+                            >
+                                <div className="font-bold text-gray-800 text-sm">{it.name}</div>
+                                <div className="text-[10px] text-gray-500 uppercase">{it.category}</div>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Quantidade</label>
+                    <input
+                        type="number"
+                        step="0.01"
+                        value={formData.quantidade}
+                        onChange={e => setFormData({ ...formData, quantidade: parseFloat(e.target.value) })}
+                        className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Unidade</label>
+                    <div className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-500 text-sm">
+                        {formData.unidade}
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Tipo de Ficha</label>
+                    <select
+                        value={formData.tipo}
+                        onChange={e => setFormData({ ...formData, tipo: e.target.value })}
+                        className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                    >
+                        <option value="ferramentas">Ferramentas</option>
+                        <option value="pecas">Peças</option>
+                        <option value="materiais">Materiais</option>
+                        <option value="combustivel">Combustível</option>
+                        <option value="oleo">Óleo</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Data</label>
+                    <input
+                        type="date"
+                        value={formData.data}
+                        onChange={e => setFormData({ ...formData, data: e.target.value })}
+                        className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                    />
+                </div>
+            </div>
+
+            <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Observações (Opcional)</label>
+                <textarea
+                    value={formData.observacoes}
+                    onChange={e => setFormData({ ...formData, observacoes: e.target.value })}
+                    className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 text-sm min-h-[80px]"
+                    placeholder="Notas adicionais..."
+                />
+            </div>
+
+            <div className="flex gap-3 pt-4">
+                <button onClick={onCancel} className="flex-1 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 uppercase text-xs tracking-widest">Cancelar</button>
+                <button
+                    onClick={() => onSave(formData)}
+                    disabled={!formData.produto_id}
+                    className="flex-[2] py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-50 uppercase text-xs tracking-widest shadow-lg shadow-emerald-200"
+                >
+                    Confirmar Entrega
+                </button>
+            </div>
         </div>
     );
 };

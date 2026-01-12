@@ -1,0 +1,862 @@
+import React, { useState } from 'react';
+import { useLogistics } from '../context/useLogistics';
+import { Plus, Edit, Trash2, DollarSign, Users, Package, TrendingUp } from 'lucide-react';
+import { CostCenter, CostCenterType, PendingInvoiceItem, PendingItemStatus } from '../types';
+
+const Faturamento: React.FC = () => {
+  const {
+    costCenters,
+    pendingInvoiceItems,
+    clients,
+    items,
+    locations,
+    currentUser,
+    isAdminOrGM,
+    addCostCenter,
+    updateCostCenter,
+    deleteCostCenter,
+    createPendingInvoiceItem,
+    updatePendingInvoiceItem,
+    deletePendingInvoiceItem,
+    getClientName,
+    getItemName,
+    getLocationName
+  } = useLogistics();
+
+  const [activeTab, setActiveTab] = useState('centros-custo');
+
+  // Estados para formulários
+  const [costCenterForm, setCostCenterForm] = useState({
+    name: '',
+    description: '',
+    type: CostCenterType.PRODUCTION,
+    locationId: '',
+    managerId: '',
+    isActive: true
+  });
+
+  const [pendingItemForm, setPendingItemForm] = useState({
+    clientId: '',
+    itemId: '',
+    costCenterId: '',
+    quantity: 0,
+    unitPrice: 0,
+    referenceDocument: '',
+    documentDate: '',
+    notes: ''
+  });
+
+  const [editingCostCenter, setEditingCostCenter] = useState<CostCenter | null>(null);
+  const [editingPendingItem, setEditingPendingItem] = useState<PendingInvoiceItem | null>(null);
+  const [isCostCenterDialogOpen, setIsCostCenterDialogOpen] = useState(false);
+  const [isPendingItemDialogOpen, setIsPendingItemDialogOpen] = useState(false);
+
+  const handleCreateCostCenter = async () => {
+    if (!costCenterForm.name.trim()) return;
+
+    const newCostCenter = {
+      name: costCenterForm.name,
+      description: costCenterForm.description,
+      type: costCenterForm.type,
+      locationId: costCenterForm.locationId || undefined,
+      managerId: costCenterForm.managerId || undefined,
+      isActive: costCenterForm.isActive
+    };
+
+    if (editingCostCenter) {
+      await updateCostCenter({ ...editingCostCenter, ...newCostCenter });
+    } else {
+      await addCostCenter(newCostCenter);
+    }
+
+    resetCostCenterForm();
+    setIsCostCenterDialogOpen(false);
+  };
+
+  const handleCreatePendingItem = async () => {
+    if (!pendingItemForm.clientId || !pendingItemForm.itemId || pendingItemForm.quantity <= 0) return;
+
+    const newItem = {
+      clientId: pendingItemForm.clientId,
+      itemId: pendingItemForm.itemId,
+      costCenterId: pendingItemForm.costCenterId || undefined,
+      quantity: pendingItemForm.quantity,
+      unitPrice: pendingItemForm.unitPrice,
+      referenceDocument: pendingItemForm.referenceDocument || undefined,
+      documentDate: pendingItemForm.documentDate || undefined,
+      notes: pendingItemForm.notes || undefined,
+      status: 'PENDING' as PendingItemStatus,
+      createdBy: currentUser!.id
+    };
+
+    if (editingPendingItem) {
+      await updatePendingInvoiceItem({ ...editingPendingItem, ...newItem });
+    } else {
+      await createPendingInvoiceItem(newItem);
+    }
+
+    resetPendingItemForm();
+    setIsPendingItemDialogOpen(false);
+  };
+
+  const resetCostCenterForm = () => {
+    setCostCenterForm({
+      name: '',
+      description: '',
+      type: 'PRODUCTION',
+      locationId: '',
+      managerId: '',
+      isActive: true
+    });
+    setEditingCostCenter(null);
+  };
+
+  const resetPendingItemForm = () => {
+    setPendingItemForm({
+      clientId: '',
+      itemId: '',
+      costCenterId: '',
+      quantity: 0,
+      unitPrice: 0,
+      referenceDocument: '',
+      documentDate: '',
+      notes: ''
+    });
+    setEditingPendingItem(null);
+  };
+
+  const editCostCenter = (costCenter: CostCenter) => {
+    setEditingCostCenter(costCenter);
+    setCostCenterForm({
+      name: costCenter.name,
+      description: costCenter.description || '',
+      type: costCenter.type,
+      locationId: costCenter.locationId || '',
+      managerId: costCenter.managerId || '',
+      isActive: costCenter.isActive
+    });
+    setIsCostCenterDialogOpen(true);
+  };
+
+  const editPendingItem = (item: PendingInvoiceItem) => {
+    setEditingPendingItem(item);
+    setPendingItemForm({
+      clientId: item.clientId,
+      itemId: item.itemId,
+      costCenterId: item.costCenterId || '',
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      referenceDocument: item.referenceDocument || '',
+      documentDate: item.documentDate || '',
+      notes: item.notes || ''
+    });
+    setIsPendingItemDialogOpen(true);
+  };
+
+  const getStatusBadge = (status: PendingItemStatus) => {
+    const variants = {
+      PENDING: 'secondary',
+      PARTIALLY_INVOICED: 'warning',
+      FULLY_INVOICED: 'success'
+    } as const;
+
+    return <Badge variant={variants[status] || 'secondary'}>{status.replace('_', ' ')}</Badge>;
+  };
+
+  const getCostCenterTypeLabel = (type: CostCenterType) => {
+    const labels = {
+      PRODUCTION: 'Produção',
+      ADMIN: 'Administração',
+      TRANSPORT: 'Transporte',
+      SALES: 'Vendas'
+    };
+    return labels[type] || type;
+  };
+
+  if (!isAdminOrGM) {
+    return (
+      <div className="p-6">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4">Acesso Restrito</h2>
+          <p className="text-gray-600">Você não tem permissão para acessar o módulo de faturamento.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold text-gray-800">Faturamento & Despesas</h1>
+        <div className="flex gap-2">
+          <button className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <TrendingUp className="h-4 w-4 mr-2" />
+            Relatórios
+          </button>
+        </div>
+      </div>
+
+      {/* Cards de Resumo */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white p-6 rounded-lg shadow-sm border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Centros de Custo</p>
+              <p className="text-2xl font-bold text-gray-900">{costCenters.length}</p>
+              <p className="text-xs text-gray-500">Ativos: {costCenters.filter(cc => cc.isActive).length}</p>
+            </div>
+            <DollarSign className="h-8 w-8 text-gray-400" />
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow-sm border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Itens por Faturar</p>
+              <p className="text-2xl font-bold text-gray-900">{pendingInvoiceItems.length}</p>
+              <p className="text-xs text-gray-500">
+                Pendentes: {pendingInvoiceItems.filter(item => item.status === 'PENDING').length}
+              </p>
+            </div>
+            <Package className="h-8 w-8 text-gray-400" />
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow-sm border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Clientes</p>
+              <p className="text-2xl font-bold text-gray-900">{clients.length}</p>
+              <p className="text-xs text-gray-500">Ativos</p>
+            </div>
+            <Users className="h-8 w-8 text-gray-400" />
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow-sm border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Valor Pendente</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {pendingInvoiceItems
+                  .filter(item => item.status !== 'FULLY_INVOICED')
+                  .reduce((sum, item) => sum + (item.remainingQuantity * item.unitPrice), 0)
+                  .toLocaleString('pt-MZ', { style: 'currency', currency: 'MZN' })}
+              </p>
+              <p className="text-xs text-gray-500">Para faturar</p>
+            </div>
+            <TrendingUp className="h-8 w-8 text-gray-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Abas */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('centros-custo')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'centros-custo'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Centros de Custo
+          </button>
+          <button
+            onClick={() => setActiveTab('itens-pendentes')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'itens-pendentes'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Itens por Faturar
+          </button>
+        </nav>
+      </div>
+
+      {/* Conteúdo das Abas */}
+      {activeTab === 'centros-custo' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Centros de Custo</h2>
+            <button
+              onClick={resetCostCenterForm}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Centro
+            </button>
+          </div>
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+                      {editingCostCenter ? 'Editar Centro de Custo' : 'Novo Centro de Custo'}
+                    </h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="name" className="block text-sm font-medium text-gray-700">Nome</label>
+                        <input
+                          id="name"
+                          type="text"
+                          value={costCenterForm.name}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="Ex: Talhão Norte"
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="description" className="block text-sm font-medium text-gray-700">Descrição</label>
+                        <input
+                          id="description"
+                          type="text"
+                          value={costCenterForm.description}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Descrição opcional"
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="type" className="block text-sm font-medium text-gray-700">Tipo</label>
+                        <select
+                          id="type"
+                          value={costCenterForm.type}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, type: e.target.value as CostCenterType }))}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        >
+                          <option value="PRODUCTION">Produção</option>
+                          <option value="ADMIN">Administração</option>
+                          <option value="TRANSPORT">Transporte</option>
+                          <option value="SALES">Vendas</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="location" className="block text-sm font-medium text-gray-700">Localização</label>
+                        <select
+                          id="location"
+                          value={costCenterForm.locationId}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, locationId: e.target.value }))}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        >
+                          <option value="">Selecione uma localização</option>
+                          {locations.map(location => (
+                            <option key={location.id} value={location.id}>
+                              {location.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="isActive"
+                          checked={costCenterForm.isActive}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, isActive: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
+                          Ativo
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={handleCreateCostCenter}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  {editingCostCenter ? 'Atualizar' : 'Criar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCostCenterDialogOpen(false)}
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white shadow-sm rounded-lg border">
+            <div className="px-4 py-5 sm:p-6">
+              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+                {editingCostCenter ? 'Editar Centro de Custo' : 'Novo Centro de Custo'}
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700">Nome</label>
+                  <input
+                    type="text"
+                    id="name"
+                    value={costCenterForm.name}
+                    onChange={(e) => setCostCenterForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    placeholder="Ex: Talhão Norte"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="description" className="block text-sm font-medium text-gray-700">Descrição</label>
+                  <input
+                    type="text"
+                    id="description"
+                    value={costCenterForm.description}
+                    onChange={(e) => setCostCenterForm(prev => ({ ...prev, description: e.target.value }))}
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    placeholder="Descrição opcional"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="type" className="block text-sm font-medium text-gray-700">Tipo</label>
+                  <select
+                    id="type"
+                    value={costCenterForm.type}
+                    onChange={(e) => setCostCenterForm(prev => ({ ...prev, type: e.target.value as CostCenterType }))}
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  >
+                    <option value={CostCenterType.PRODUCTION}>Produção</option>
+                    <option value={CostCenterType.ADMIN}>Administração</option>
+                    <option value={CostCenterType.TRANSPORT}>Transporte</option>
+                    <option value={CostCenterType.SALES}>Vendas</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="location" className="block text-sm font-medium text-gray-700">Localização</label>
+                  <select
+                    id="location"
+                    value={costCenterForm.locationId}
+                    onChange={(e) => setCostCenterForm(prev => ({ ...prev, locationId: e.target.value }))}
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  >
+                    <option value="">Selecione uma localização</option>
+                    {locations.map(location => (
+                      <option key={location.id} value={location.id}>
+                        {location.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="isActive"
+                    checked={costCenterForm.isActive}
+                    onChange={(e) => setCostCenterForm(prev => ({ ...prev, isActive: e.target.checked }))}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
+                    Ativo
+                  </label>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsCostCenterDialogOpen(false)}
+                    className="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateCostCenter}
+                    className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    {editingCostCenter ? 'Atualizar' : 'Criar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Centro de Custo */}
+      {isCostCenterDialogOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+              <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+            </div>
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+                      {editingCostCenter ? 'Editar Centro de Custo' : 'Novo Centro de Custo'}
+                    </h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="modal-name" className="block text-sm font-medium text-gray-700">Nome</label>
+                        <input
+                          type="text"
+                          id="modal-name"
+                          value={costCenterForm.name}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, name: e.target.value }))}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          placeholder="Ex: Talhão Norte"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="modal-description" className="block text-sm font-medium text-gray-700">Descrição</label>
+                        <input
+                          type="text"
+                          id="modal-description"
+                          value={costCenterForm.description}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, description: e.target.value }))}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          placeholder="Descrição opcional"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="modal-type" className="block text-sm font-medium text-gray-700">Tipo</label>
+                        <select
+                          id="modal-type"
+                          value={costCenterForm.type}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, type: e.target.value as CostCenterType }))}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        >
+                          <option value={CostCenterType.PRODUCTION}>Produção</option>
+                          <option value={CostCenterType.ADMIN}>Administração</option>
+                          <option value={CostCenterType.TRANSPORT}>Transporte</option>
+                          <option value={CostCenterType.SALES}>Vendas</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="modal-location" className="block text-sm font-medium text-gray-700">Localização</label>
+                        <select
+                          id="modal-location"
+                          value={costCenterForm.locationId}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, locationId: e.target.value }))}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        >
+                          <option value="">Selecione uma localização</option>
+                          {locations.map(location => (
+                            <option key={location.id} value={location.id}>
+                              {location.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="modal-isActive"
+                          checked={costCenterForm.isActive}
+                          onChange={(e) => setCostCenterForm(prev => ({ ...prev, isActive: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="modal-isActive" className="ml-2 block text-sm text-gray-900">
+                          Ativo
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={handleCreateCostCenter}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  {editingCostCenter ? 'Atualizar' : 'Criar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCostCenterDialogOpen(false)}
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela de Centros de Custo */}
+      <div className="bg-white shadow-sm rounded-lg border">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Localização</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {costCenters.map(costCenter => (
+                <tr key={costCenter.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{costCenter.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getCostCenterTypeLabel(costCenter.type)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{costCenter.locationId ? getLocationName(costCenter.locationId) : '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      costCenter.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {costCenter.isActive ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => editCostCenter(costCenter)}
+                        className="text-blue-600 hover:text-blue-900"
+                        title="Editar"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => deleteCostCenter(costCenter.id)}
+                        className="text-red-600 hover:text-red-900"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {activeTab === 'itens-pendentes' && (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold">Itens por Faturar</h2>
+        <button
+          onClick={resetPendingItemForm}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Novo Item
+        </button>
+      </div>
+      {/* Modal para Item Pendente */}
+      {isPendingItemDialogOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+              <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+            </div>
+            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
+                      {editingPendingItem ? 'Editar Item Pendente' : 'Novo Item por Faturar'}
+                    </h3>
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="client" className="block text-sm font-medium text-gray-700">Cliente</label>
+                          <select
+                            id="client"
+                            value={pendingItemForm.clientId}
+                            onChange={(e) => setPendingItemForm(prev => ({ ...prev, clientId: e.target.value }))}
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          >
+                            <option value="">Selecione um cliente</option>
+                            {clients.map(client => (
+                              <option key={client.id} value={client.id}>
+                                {client.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="item" className="block text-sm font-medium text-gray-700">Produto</label>
+                          <select
+                            id="item"
+                            value={pendingItemForm.itemId}
+                            onChange={(e) => setPendingItemForm(prev => ({ ...prev, itemId: e.target.value }))}
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          >
+                            <option value="">Selecione um produto</option>
+                            {items.map(item => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <label htmlFor="quantity" className="block text-sm font-medium text-gray-700">Quantidade</label>
+                          <input
+                            id="quantity"
+                            type="number"
+                            value={pendingItemForm.quantity}
+                            onChange={(e) => setPendingItemForm(prev => ({ ...prev, quantity: parseFloat(e.target.value) || 0 }))}
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="unitPrice" className="block text-sm font-medium text-gray-700">Preço Unitário</label>
+                          <input
+                            id="unitPrice"
+                            type="number"
+                            step="0.01"
+                            value={pendingItemForm.unitPrice}
+                            onChange={(e) => setPendingItemForm(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Total</label>
+                          <div className="mt-1 p-2 bg-gray-50 rounded border">
+                            {(pendingItemForm.quantity * pendingItemForm.unitPrice).toLocaleString('pt-MZ', { style: 'currency', currency: 'MZN' })}
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="costCenter" className="block text-sm font-medium text-gray-700">Centro de Custo</label>
+                        <select
+                          id="costCenter"
+                          value={pendingItemForm.costCenterId}
+                          onChange={(e) => setPendingItemForm(prev => ({ ...prev, costCenterId: e.target.value }))}
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        >
+                          <option value="">Selecione um centro de custo</option>
+                          {costCenters.filter(cc => cc.isActive).map(costCenter => (
+                            <option key={costCenter.id} value={costCenter.id}>
+                              {costCenter.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="referenceDocument" className="block text-sm font-medium text-gray-700">Documento de Referência</label>
+                          <input
+                            id="referenceDocument"
+                            type="text"
+                            value={pendingItemForm.referenceDocument}
+                            onChange={(e) => setPendingItemForm(prev => ({ ...prev, referenceDocument: e.target.value }))}
+                            placeholder="Ex: Guia #123"
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="documentDate" className="block text-sm font-medium text-gray-700">Data do Documento</label>
+                          <input
+                            id="documentDate"
+                            type="date"
+                            value={pendingItemForm.documentDate}
+                            onChange={(e) => setPendingItemForm(prev => ({ ...prev, documentDate: e.target.value }))}
+                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="notes" className="block text-sm font-medium text-gray-700">Observações</label>
+                        <input
+                          id="notes"
+                          type="text"
+                          value={pendingItemForm.notes}
+                          onChange={(e) => setPendingItemForm(prev => ({ ...prev, notes: e.target.value }))}
+                          placeholder="Observações opcionais"
+                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={handleCreatePendingItem}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  {editingPendingItem ? 'Atualizar' : 'Criar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPendingItemDialogOpen(false)}
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela de Itens Pendentes */}
+      <div className="bg-white shadow-sm rounded-lg border">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produto</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantidade</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor Total</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {pendingInvoiceItems.map(item => (
+                <tr key={item.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {clients.find(c => c.id === item.clientId)?.name || 'Cliente não encontrado'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {items.find(i => i.id === item.itemId)?.name || 'Produto não encontrado'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {item.remainingQuantity} / {item.quantity}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {(item.remainingQuantity * item.unitPrice).toLocaleString('pt-MZ', { style: 'currency', currency: 'MZN' })}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {getStatusBadge(item.status)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => editPendingItem(item)}
+                        className="text-blue-600 hover:text-blue-900"
+                        title="Editar"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => deletePendingInvoiceItem(item.id)}
+                        className="text-red-600 hover:text-red-900"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+    </div>
+  );
+};
+
+export default Faturamento;
