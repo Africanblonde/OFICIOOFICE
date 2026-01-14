@@ -40,10 +40,6 @@ export const Requisitions = () => {
   const [selectedSheetToPrint, setSelectedSheetToPrint] = useState<RequisitionSheet | null>(null);
   const [expandedSheetId, setExpandedSheetId] = useState<string | null>(null);
 
-  if (viewMode === 'form') {
-    return <RequisitionForm onCancel={() => setViewMode('list')} onSuccess={() => setViewMode('list')} />;
-  }
-
   // State for expand/collapse rows
   const [expandedReqId, setExpandedReqId] = useState<string | null>(null);
 
@@ -58,6 +54,10 @@ export const Requisitions = () => {
       setSelectedItem(items[0].id);
     }
   }, [items, selectedItem]);
+
+  if (viewMode === 'form') {
+    return <RequisitionForm onCancel={() => setViewMode('list')} onSuccess={() => setViewMode('list')} />;
+  }
 
   // Filter logic: Admins see all. Managers see their own + sub-locations. Workers see theirs.
   const myRequisitions = requisitions.filter(req => {
@@ -237,7 +237,6 @@ export const Requisitions = () => {
           <h2 className="text-xl md:text-2xl font-bold text-gray-800">Fluxo de Requisições</h2>
           <p className="text-sm text-gray-500">Gerencie a entrada e saída de materiais.</p>
         </div>
-        {currentUser?.role !== Role.ADMIN && currentUser?.role !== Role.GENERAL_MANAGER && (
           <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
             <button
               onClick={() => setIsModalOpen(true)}
@@ -252,7 +251,6 @@ export const Requisitions = () => {
               <FileText size={18} /> Nova Requisição (Múltipla)
             </button>
           </div>
-        )}
       </div>
 
       {/* TABS */}

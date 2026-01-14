@@ -285,6 +285,7 @@ export const FichasIndividuais = () => {
             allPeople={allUsers}
             allItems={items}
             inventory={inventory}
+            currentUser={currentUser}
             onClose={() => setIsModalOpen(false)}
             onSave={async (data) => {
               await createFicha(data);
@@ -302,11 +303,12 @@ interface FichaDeliveryModalProps {
   allPeople: User[];
   allItems: Item[];
   inventory: any[];
+  currentUser: User | null;
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
 }
 
-const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId, allPeople, allItems, inventory, onClose, onSave }) => {
+const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId, allPeople, allItems, inventory, currentUser, onClose, onSave }) => {
   const [formData, setFormData] = useState({
     tipo: 'combustivel' as FichaTipo,
     entidade_id: initialPersonId || '',
@@ -331,14 +333,24 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
     );
   }, [allItems, searchProduct]);
 
-  // Selected item stock
+  // Selected person for stock location
+  const selectedPerson = useMemo(() =>
+    allPeople.find(u => u.id === formData.entidade_id),
+    [allPeople, formData.entidade_id]
+  );
+
+  // Determine the location from which stock will be reduced
+  const stockLocationId = useMemo(() =>
+    selectedPerson?.locationId || currentUser?.locationId,
+    [selectedPerson, currentUser]
+  );
+
+  // Get stock for the selected item AT THE CORRECT LOCATION
   const selectedItemStock = useMemo(() => {
-    if (!formData.produto_id) return 0;
-    // Find stock for the item in any location (simplified for now, ideally current user's location)
-    // In LogisticsContext we handle specific location, here we show general for context
-    const itemInventory = inventory.filter(inv => inv.itemId === formData.produto_id);
-    return itemInventory.reduce((acc, curr) => acc + curr.quantity, 0);
-  }, [formData.produto_id, inventory]);
+    if (!formData.produto_id || !stockLocationId) return 0;
+    const itemInventory = inventory.find(inv => inv.itemId === formData.produto_id && inv.locationId === stockLocationId);
+    return itemInventory?.quantity || 0;
+  }, [formData.produto_id, stockLocationId, inventory]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

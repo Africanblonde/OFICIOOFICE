@@ -1321,6 +1321,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   const updateRequisitionSheetStatus = async (sheetId: string, newStatus: RequestStatus) => {
     if (!currentUser) return;
 
+    const sheet = requisitionSheets.find(s => s.id === sheetId);
+    if (!sheet) {
+        showNotification(`Erro: Ficha de requisição ${sheetId} não encontrada.`);
+        return;
+    }
+
     const { error } = await supabase
       .from('requisition_sheets')
       .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -1329,6 +1335,23 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (error) {
       showNotification(`Erro ao atualizar status: ${error.message}`);
       return;
+    }
+
+    // Update inventory if needed
+    if (newStatus === RequestStatus.APPROVED) {
+        for (const item of sheet.items) {
+            if (item.itemId) { // Only for existing items with an ID
+                await updateInventory(item.itemId, sheet.sourceLocationId, -item.quantity);
+            }
+        }
+    }
+
+    if (newStatus === RequestStatus.CONFIRMED) {
+        for (const item of sheet.items) {
+            if (item.itemId) { // Only for existing items with an ID
+                await updateInventory(item.itemId, sheet.targetLocationId, item.quantity);
+            }
+        }
     }
 
     // Local state update (optimistic or wait for reload)
