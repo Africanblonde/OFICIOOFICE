@@ -144,6 +144,8 @@ export const FichasIndividuais = () => {
                   <div className="flex items-center gap-4">
                     <button
                       onClick={() => setSelectedPersonId(null)}
+                      title="Voltar"
+                      aria-label="Voltar"
                       className="md:hidden p-2 hover:bg-gray-100 rounded-lg -ml-2"
                     >
                       <ChevronLeft className="w-6 h-6 text-gray-600" />
@@ -380,7 +382,7 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
             <h2 className="text-xl font-bold">Registrar Entrega de Material</h2>
             <p className="text-emerald-100 text-xs mt-1 uppercase tracking-widest font-bold">Saída de Stock Individual</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+          <button title="Fechar" aria-label="Fechar" onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
             <X className="w-6 h-6" />
           </button>
         </div>
@@ -391,6 +393,9 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
             <div className="col-span-1 md:col-span-2">
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Funcionário / Beneficiário</label>
               <select
+                id="ficha-entidade"
+                title="Funcionário"
+                aria-label="Funcionário"
                 value={formData.entidade_id}
                 onChange={(e) => setFormData({ ...formData, entidade_id: e.target.value })}
                 className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
@@ -409,6 +414,9 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
+                  id="ficha-search-product"
+                  title="Pesquisar produto no inventário"
+                  aria-label="Pesquisar produto no inventário"
                   type="text"
                   placeholder="Buscar no inventário..."
                   value={searchProduct}
@@ -444,6 +452,9 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Categoria da Ficha</label>
               <select
+                id="ficha-tipo"
+                title="Categoria da ficha"
+                aria-label="Categoria da ficha"
                 value={formData.tipo}
                 onChange={(e) => setFormData({ ...formData, tipo: e.target.value as FichaTipo })}
                 className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -458,6 +469,9 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Data de Entrega</label>
               <input
+                id="ficha-data"
+                title="Data da entrega"
+                aria-label="Data da entrega"
                 type="date"
                 value={formData.data}
                 onChange={(e) => setFormData({ ...formData, data: e.target.value })}
@@ -478,8 +492,12 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <input
+                  id="ficha-quantidade"
+                  title="Quantidade a entregar"
+                  aria-label="Quantidade a entregar"
                   type="number"
                   step="0.01"
+                  placeholder="0.00"
                   value={formData.quantidade}
                   onChange={(e) => setFormData({ ...formData, quantidade: parseFloat(e.target.value) })}
                   min="0.01"

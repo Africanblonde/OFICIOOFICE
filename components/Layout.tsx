@@ -321,8 +321,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             </button>
           )}
 
-          
-
           {hasPermission('VIEW_SETTINGS') && (
             <button
               onClick={() => handleTabClick('settings')}

@@ -2,7 +2,9 @@
 import React, { useState } from "react";
 import { useLogistics } from '../context/useLogistics';
 import { LocationType, ItemType, Role } from "../types";
-import { Plus, Trash2, MapPin, Tag, Scale, Box, Lock, CreditCard, DollarSign, Building2, Coins, UserPlus, X } from "lucide-react";
+import { Plus, Trash2, MapPin, Tag, Scale, Box, Lock, CreditCard, DollarSign, Building2, Coins, UserPlus, X, Settings as SettingsIcon, Users, BarChart3 } from "lucide-react";
+
+type SettingsTab = 'organization' | 'catalog' | 'finance' | 'admin';
 
 export const Settings = () => {
   const {
@@ -27,25 +29,24 @@ export const Settings = () => {
     defaultCurrency,
     setDefaultCurrency,
     hasPermission,
-    addUser
-    , resetLocalData
+    addUser,
+    resetLocalData
   } = useLogistics();
 
-  // Local state for inputs
+  // State Management
+  const [activeTab, setActiveTab] = useState<SettingsTab>('organization');
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [editingCompanyInfo, setEditingCompanyInfo] = useState(companyInfo);
+
+  // Form Inputs
   const [newLocName, setNewLocName] = useState("");
   const [newLocType, setNewLocType] = useState<LocationType>(LocationType.BRANCH);
   const [newCategory, setNewCategory] = useState("");
   const [newUnit, setNewUnit] = useState("");
-
-  // New Item Type State
   const [newTypeName, setNewTypeName] = useState("");
   const [newTypeBehavior, setNewTypeBehavior] = useState<ItemType>(ItemType.ASSET);
-
-  // New Settings State
   const [newPaymentMethod, setNewPaymentMethod] = useState("");
   const [newExpenseCategory, setNewExpenseCategory] = useState("");
-  const [editingCompanyInfo, setEditingCompanyInfo] = useState(companyInfo);
-  const [showUserModal, setShowUserModal] = useState(false);
 
   // New User State
   const [newUserName, setNewUserName] = useState("");
@@ -56,10 +57,10 @@ export const Settings = () => {
 
   const canManage = hasPermission('MANAGE_SETTINGS');
 
+  // ===== HANDLERS =====
   const handleAddLocation = (e: React.FormEvent) => {
     e.preventDefault();
     if (newLocName.trim() !== "") {
-      // Get the central location ID if it exists, otherwise pass null
       const centralLocation = locations.find(l => l.type === LocationType.CENTRAL);
       const parentId = centralLocation ? centralLocation.id : null;
       addLocation(newLocName, newLocType, parentId);
@@ -116,7 +117,7 @@ export const Settings = () => {
     e.preventDefault();
 
     if (!newUserName || !newUserEmail || !newUserPassword) {
-      alert('Por favor preencha todos os campos obrigatórios:\n- Nome completo\n- Email\n- Senha (mínimo 8 caracteres)');
+      alert('Por favor preencha todos os campos obrigatórios.');
       return;
     }
 
@@ -147,8 +148,8 @@ export const Settings = () => {
 
   const handleResetLocal = () => {
     if (!canManage) return;
-    if (!window.confirm('Isto irá apagar TODOS os dados locais (localStorage e estados). Continuar?')) return;
-    const confirmText = window.prompt('Por favor, digite RESET para confirmar:');
+    if (!window.confirm('Isto irá apagar TODOS os dados locais. Continuar?')) return;
+    const confirmText = window.prompt('Digite RESET para confirmar:');
     if (confirmText === 'RESET') {
       try {
         resetLocalData();
@@ -158,493 +159,621 @@ export const Settings = () => {
         alert('Erro ao reiniciar dados locais. Veja o console.');
       }
     } else {
-      alert('Confirmação inválida. Operação cancelada.');
+      alert('Confirmação cancelada.');
     }
   };
 
+  // ===== TAB NAVIGATION =====
+  const TabButton = ({ id, label, icon: Icon }: { id: SettingsTab; label: string; icon: React.ReactNode }) => (
+    <button
+      onClick={() => setActiveTab(id)}
+      className={`flex items-center gap-2 px-4 py-3 font-medium transition-all rounded-lg ${
+        activeTab === id
+          ? 'bg-emerald-600 text-white shadow-md'
+          : 'text-gray-600 hover:bg-gray-100'
+      }`}
+    >
+      {Icon}
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+
+  // ===== USER MODAL =====
+  const UserModal = () => (
+    showUserModal && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-96 overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+              <UserPlus className="text-emerald-600" size={24} />
+              Novo Usuário
+            </h3>
+            <button
+              aria-label="Fechar modal"
+              title="Fechar"
+              onClick={() => setShowUserModal(false)}
+              className="text-gray-500 hover:text-gray-700 transition"
+            >
+              <X size={24} />
+            </button>
+          </div>
+
+          <form onSubmit={handleAddUser} className="space-y-4">
+            <div>
+              <label htmlFor="userFullName" className="block text-sm font-semibold text-gray-700 mb-2">
+                Nome Completo *
+              </label>
+              <input
+                id="userFullName"
+                type="text"
+                value={newUserName}
+                onChange={(e) => setNewUserName(e.target.value)}
+                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+                placeholder="João Silva"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="userEmail" className="block text-sm font-semibold text-gray-700 mb-2">
+                Email *
+              </label>
+              <input
+                id="userEmail"
+                type="email"
+                value={newUserEmail}
+                onChange={(e) => setNewUserEmail(e.target.value)}
+                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+                placeholder="joao@example.com"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="userPassword" className="block text-sm font-semibold text-gray-700 mb-2">
+                Senha (min. 8 caracteres) *
+              </label>
+              <input
+                id="userPassword"
+                type="password"
+                value={newUserPassword}
+                onChange={(e) => setNewUserPassword(e.target.value)}
+                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+                placeholder="••••••••"
+                minLength={8}
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="userRole" className="block text-sm font-semibold text-gray-700 mb-2">
+                Função *
+              </label>
+              <select
+                id="userRole"
+                value={newUserRole}
+                onChange={(e) => setNewUserRole(e.target.value as Role)}
+                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              >
+                <option value={Role.WORKER}>Trabalhador (Campo)</option>
+                <option value={Role.MANAGER}>Gerente (Filial)</option>
+                <option value={Role.GENERAL_MANAGER}>Diretor Geral</option>
+                <option value={Role.ADMIN}>Administrador</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="userLocation" className="block text-sm font-semibold text-gray-700 mb-2">
+                Localização
+              </label>
+              <select
+                id="userLocation"
+                value={newUserLocation}
+                onChange={(e) => setNewUserLocation(e.target.value)}
+                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              >
+                <option value="">Nenhuma</option>
+                {locations.map(loc => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="pt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowUserModal(false)}
+                className="flex-1 py-2.5 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2.5 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition shadow-sm"
+              >
+                Criar Usuário
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  );
+
+  // ===== CARD COMPONENT =====
+  const SettingsCard = ({ icon: Icon, title, description, children, className = '' }: any) => (
+    <div className={`bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition ${className}`}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="p-2.5 bg-gray-100 rounded-lg">
+          <Icon size={20} className="text-gray-700" />
+        </div>
+        <div>
+          <h3 className="font-bold text-gray-800">{title}</h3>
+          {description && <p className="text-xs text-gray-500">{description}</p>}
+        </div>
+      </div>
+      <div className="border-t border-gray-100 pt-4">
+        {children}
+      </div>
+    </div>
+  );
+
+  // ===== RENDER =====
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Definições do Sistema</h2>
-          <p className="text-sm text-gray-500">Configuração de parâmetros globais.</p>
+          <h1 className="text-3xl font-bold text-gray-900">Definições</h1>
+          <p className="text-gray-500 mt-1">Configure o sistema para sua operação</p>
         </div>
         {!canManage && (
-          <div className="bg-yellow-50 text-yellow-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 border border-yellow-200">
-            <Lock size={12} /> Modo Visualização
+          <div className="bg-yellow-50 text-yellow-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 border border-yellow-200">
+            <Lock size={16} /> Modo Visualização
           </div>
         )}
       </div>
 
-      {/* Admin User Modal */}
-      {showUserModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <UserPlus className="text-emerald-600" />
-                Adicionar Usuário
-              </h3>
-              <button aria-label="Fechar modal" title="Fechar" onClick={() => setShowUserModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={24} />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddUser} className="space-y-4">
-              <div>
-                <label htmlFor="userFullName" className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
-                <input
-                  id="userFullName"
-                  type="text"
-                  value={newUserName}
-                  onChange={(e) => setNewUserName(e.target.value)}
-                  className="w-full border p-2 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="userEmail" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  id="userEmail"
-                  type="email"
-                  value={newUserEmail}
-                  onChange={(e) => setNewUserEmail(e.target.value)}
-                  className="w-full border p-2 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="userPassword" className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                <input
-                  id="userPassword"
-                  type="password"
-                  value={newUserPassword}
-                  onChange={(e) => setNewUserPassword(e.target.value)}
-                  className="w-full border p-2 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  placeholder="Mínimo 8 caracteres"
-                  minLength={8}
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="userRole" className="block text-sm font-medium text-gray-700 mb-1">Função (Role)</label>
-                <select
-                  id="userRole"
-                  value={newUserRole}
-                  onChange={(e) => setNewUserRole(e.target.value as Role)}
-                  className="w-full border p-2 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                >
-                  <option value={Role.WORKER}>Trabalhador (Campo)</option>
-                  <option value={Role.MANAGER}>Gerente (Filial)</option>
-                  <option value={Role.GENERAL_MANAGER}>Diretor Geral</option>
-                  <option value={Role.ADMIN}>Administrador</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="userLocation" className="block text-sm font-medium text-gray-700 mb-1">Localização</label>
-                <select
-                  id="userLocation"
-                  value={newUserLocation}
-                  onChange={(e) => setNewUserLocation(e.target.value)}
-                  className="w-full border p-2 rounded bg-gray-50 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  required={newUserRole !== Role.ADMIN && newUserRole !== Role.GENERAL_MANAGER}
-                >
-                  <option value="">Selecione...</option>
-                  {locations.map(loc => (
-                    <option key={loc.id} value={loc.id}>{loc.name} ({loc.type})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowUserModal(false)}
-                  className="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium shadow-lg shadow-emerald-200"
-                >
-                  Criar Usuário
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Action Bar */}
-      {hasPermission('MANAGE_USERS') && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-end">
-          <button
-            onClick={() => setShowUserModal(true)}
-            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-sm"
-          >
-            <UserPlus size={18} />
-            Adicionar Usuário
-          </button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-
-        {/* Tipos de Item */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit xl:col-span-1">
-          <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <Box size={20} className="text-orange-600" />
-            Tipos de Item & Comportamento
-          </h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Defina tipos (ex: EPI, Ferramenta) e se são bens duráveis (Ativo) ou gastos (Consumível).
-          </p>
-          {canManage && (
-            <form onSubmit={handleAddItemType} className="flex flex-col gap-2 mb-4">
-              <input
-                type="text"
-                placeholder="Ex: Ferramenta Elétrica"
-                value={newTypeName}
-                onChange={(e) => setNewTypeName(e.target.value)}
-                className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-orange-500"
-                aria-label="Nome do tipo de item"
-              />
-              <select
-                value={newTypeBehavior}
-                onChange={(e) => setNewTypeBehavior(e.target.value as ItemType)}
-                className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-orange-500"
-                aria-label="Comportamento do item"
-              >
-                <option value={ItemType.ASSET}>Ativo (Durável / Devolução Obrigatória)</option>
-                <option value={ItemType.CONSUMABLE}>Consumível (Gasto / Sem Devolução)</option>
-              </select>
-              <button
-                type="submit"
-                className="bg-orange-600 text-white py-2 rounded hover:bg-orange-700 text-sm font-medium"
-                title="Adicionar novo tipo de item"
-              >
-                Adicionar Tipo
-              </button>
-            </form>
-          )}
-          <ul className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-            {itemTypes.map((type) => (
-              <li key={type.id} className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm text-gray-700">
-                <span className="font-medium">{type.name}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded border ${type.behavior === ItemType.ASSET ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-purple-50 text-purple-600 border-purple-200'}`}>
-                  {type.behavior === ItemType.ASSET ? 'Ativo' : 'Consumível'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Unidades de Medida */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
-          <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <Scale size={20} className="text-purple-600" />
-            Unidades de Medida
-          </h3>
-          {canManage && (
-            <form onSubmit={handleAddUnit} className="flex gap-2 mb-4">
-              <input
-                type="text"
-                placeholder="Ex: Kg, Litros..."
-                value={newUnit}
-                onChange={(e) => setNewUnit(e.target.value)}
-                className="flex-1 border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-purple-500"
-                aria-label="Unidade de medida"
-              />
-              <button
-                type="submit"
-                className="bg-purple-600 text-white p-2 rounded hover:bg-purple-700"
-                title="Adicionar unidade de medida"
-                aria-label="Adicionar unidade"
-              >
-                <Plus size={20} />
-              </button>
-            </form>
-          )}
-          <ul className="space-y-2">
-            {measureUnits.map((unit, idx) => (
-              <li key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm text-gray-700">
-                <span>{unit}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Localizações */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit lg:col-span-1">
-          <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <MapPin size={20} className="text-emerald-600" />
-            Localizações
-          </h3>
-          {canManage && (
-            <form onSubmit={handleAddLocation} className="flex flex-col gap-2 mb-4">
-              <input
-                type="text"
-                placeholder="Nome da Filial/Local"
-                value={newLocName}
-                onChange={(e) => setNewLocName(e.target.value)}
-                className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-emerald-500"
-                aria-label="Nome da localização"
-              />
-              <select
-                value={newLocType}
-                onChange={(e) => setNewLocType(e.target.value as LocationType)}
-                className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-emerald-500"
-                aria-label="Tipo de localização"
-              >
-                <option value={LocationType.BRANCH}>Filial (Branch)</option>
-                <option value={LocationType.FIELD}>Equipe de Campo (Field)</option>
-              </select>
-              <button
-                type="submit"
-                className="bg-emerald-600 text-white py-2 rounded hover:bg-emerald-700 text-sm font-medium"
-                title="Adicionar nova localização"
-              >
-                Adicionar Local
-              </button>
-            </form>
-          )}
-          <ul className="max-h-60 overflow-y-auto space-y-2 custom-scrollbar">
-            {locations.filter(l => l.type !== 'CENTRAL').map((loc) => (
-              <li key={loc.id} className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm text-gray-700">
-                <div className="flex flex-col">
-                  <span className="font-medium">{loc.name}</span>
-                  <span className="text-[10px] text-gray-500">{loc.type}</span>
-                </div>
-                {canManage && (
-                  <button
-                    onClick={() => {
-                      if (window.confirm(`Tem certeza que deseja remover a localização "${loc.name}"?`)) {
-                        removeLocation(loc.id);
-                      }
-                    }}
-                    className="text-red-500 hover:text-red-700 p-1"
-                    title="Remover Localização"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Métodos de Pagamento */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
-          <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <CreditCard size={20} className="text-blue-600" />
-            Métodos de Pagamento
-          </h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Configure os métodos de pagamento disponíveis no POS e Faturas.
-          </p>
-          {canManage && (
-            <form onSubmit={handleAddPaymentMethod} className="flex gap-2 mb-4">
-              <input
-                type="text"
-                placeholder="Ex: PayPal, Crypto..."
-                value={newPaymentMethod}
-                onChange={(e) => setNewPaymentMethod(e.target.value)}
-                className="flex-1 border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-blue-500"
-                aria-label="Método de pagamento"
-              />
-              <button
-                type="submit"
-                className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
-                title="Adicionar método de pagamento"
-                aria-label="Adicionar método"
-              >
-                <Plus size={20} />
-              </button>
-            </form>
-          )}
-          <ul className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-            {paymentMethods.map((method, idx) => (
-              <li key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm text-gray-700">
-                <span>{method}</span>
-                {canManage && (
-                  <button
-                    onClick={() => removePaymentMethod(method)}
-                    className="text-red-500 hover:text-red-700"
-                    title="Remover"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Categorias de Despesas */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
-          <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <Tag size={20} className="text-pink-600" />
-            Categorias de Despesas
-          </h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Categorias para classificar despesas no POS.
-          </p>
-          {canManage && (
-            <form onSubmit={handleAddExpenseCategory} className="flex gap-2 mb-4">
-              <input
-                type="text"
-                placeholder="Ex: Marketing, Transporte..."
-                value={newExpenseCategory}
-                onChange={(e) => setNewExpenseCategory(e.target.value)}
-                className="flex-1 border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-pink-500"
-                aria-label="Categoria de despesa"
-              />
-              <button
-                type="submit"
-                className="bg-pink-600 text-white p-2 rounded hover:bg-pink-700"
-                title="Adicionar categoria de despesa"
-                aria-label="Adicionar categoria"
-              >
-                <Plus size={20} />
-              </button>
-            </form>
-          )}
-          <ul className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-            {expenseCategories.map((cat, idx) => (
-              <li key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded text-sm text-gray-700">
-                <span>{cat}</span>
-                {canManage && (
-                  <button
-                    onClick={() => removeExpenseCategory(cat)}
-                    className="text-red-500 hover:text-red-700"
-                    title="Remover"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Informações da Empresa */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
-          <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <Building2 size={20} className="text-indigo-600" />
-            Informações da Empresa
-          </h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Dados usados automaticamente em faturas e documentos.
-          </p>
-          {canManage ? (
-            <form onSubmit={handleUpdateCompanyInfo} className="flex flex-col gap-3">
-              <input
-                type="text"
-                placeholder="Nome da Empresa"
-                value={editingCompanyInfo.nome}
-                onChange={(e) => setEditingCompanyInfo({ ...editingCompanyInfo, nome: e.target.value })}
-                className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-indigo-500"
-                required
-              />
-              <input
-                type="text"
-                placeholder="NUIT"
-                value={editingCompanyInfo.nuit}
-                onChange={(e) => setEditingCompanyInfo({ ...editingCompanyInfo, nuit: e.target.value })}
-                className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-indigo-500"
-                required
-              />
-              <input
-                type="text"
-                placeholder="Endereço"
-                value={editingCompanyInfo.endereco}
-                onChange={(e) => setEditingCompanyInfo({ ...editingCompanyInfo, endereco: e.target.value })}
-                className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-indigo-500"
-                required
-              />
-              <input
-                type="text"
-                placeholder="Contacto"
-                value={editingCompanyInfo.contacto || ''}
-                onChange={(e) => setEditingCompanyInfo({ ...editingCompanyInfo, contacto: e.target.value })}
-                className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-indigo-500"
-              />
-              <button
-                type="submit"
-                className="bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 text-sm font-medium"
-              >
-                Salvar Informações
-              </button>
-            </form>
-          ) : (
-            <div className="space-y-2 text-sm text-gray-700">
-              <p><strong>Nome:</strong> {companyInfo.nome}</p>
-              <p><strong>NUIT:</strong> {companyInfo.nuit}</p>
-              <p><strong>Endereço:</strong> {companyInfo.endereco}</p>
-              {companyInfo.contacto && <p><strong>Contacto:</strong> {companyInfo.contacto}</p>}
-            </div>
-          )}
-        </div>
-
-        {/* Configurações de Moeda */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit">
-          <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-4">
-            <Coins size={20} className="text-yellow-600" />
-            Moeda Padrão
-          </h3>
-          <p className="text-xs text-gray-500 mb-3">
-            Moeda padrão para novos documentos e transações.
-          </p>
-          {canManage ? (
-            <select
-              value={defaultCurrency}
-              onChange={(e) => setDefaultCurrency(e.target.value)}
-              className="w-full border p-2 rounded bg-white text-gray-900 text-sm focus:outline-none focus:border-yellow-500"
-              aria-label="Moeda Padrão"
-            >
-              {availableCurrencies.map(curr => (
-                <option key={curr} value={curr}>{curr}</option>
-              ))}
-            </select>
-          ) : (
-            <div className="bg-gray-50 p-3 rounded text-center">
-              <span className="text-2xl font-bold text-gray-800">{defaultCurrency}</span>
-            </div>
-          )}
-          <div className="mt-4 space-y-2">
-            <p className="text-xs font-semibold text-gray-600">Moedas Disponíveis:</p>
-            <div className="flex gap-2">
-              {availableCurrencies.map(curr => (
-                <span key={curr} className="px-3 py-1 bg-yellow-50 text-yellow-700 rounded-full text-xs font-medium border border-yellow-200">
-                  {curr}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
+      {/* Tab Navigation */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-2 flex flex-wrap gap-1 md:gap-2">
+        <TabButton id="organization" label="Organização" icon={<MapPin size={18} />} />
+        <TabButton id="catalog" label="Catálogo" icon={<BarChart3 size={18} />} />
+        <TabButton id="finance" label="Financeiro" icon={<DollarSign size={18} />} />
+        {hasPermission('MANAGE_USERS') && <TabButton id="admin" label="Administração" icon={<Users size={18} />} />}
       </div>
 
-      {/* Danger Zone */}
-      <div className="mt-6">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6">
-          <h3 className="text-lg font-bold text-red-700 mb-2">Danger Zone</h3>
-          <p className="text-sm text-red-600 mb-4">Ações nesta secção podem apagar dados locais do navegador. Use com cuidado.</p>
-          <div className="flex gap-3">
+      {/* ===== TAB: ORGANIZATION ===== */}
+      {activeTab === 'organization' && (
+        <div className="space-y-6">
+          {/* Company Info */}
+          <SettingsCard
+            icon={Building2}
+            title="Informações da Empresa"
+            description="Dados exibidos em faturas e documentos"
+          >
+            {canManage ? (
+              <form onSubmit={handleUpdateCompanyInfo} className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Nome da Empresa"
+                  value={editingCompanyInfo.nome}
+                  onChange={(e) => setEditingCompanyInfo({ ...editingCompanyInfo, nome: e.target.value })}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="NUIT"
+                  value={editingCompanyInfo.nuit}
+                  onChange={(e) => setEditingCompanyInfo({ ...editingCompanyInfo, nuit: e.target.value })}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Endereço"
+                  value={editingCompanyInfo.endereco}
+                  onChange={(e) => setEditingCompanyInfo({ ...editingCompanyInfo, endereco: e.target.value })}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Contacto (Opcional)"
+                  value={editingCompanyInfo.contacto || ''}
+                  onChange={(e) => setEditingCompanyInfo({ ...editingCompanyInfo, contacto: e.target.value })}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium transition"
+                >
+                  Guardar Informações
+                </button>
+              </form>
+            ) : (
+              <div className="space-y-3 text-sm">
+                <div>
+                  <span className="font-semibold text-gray-700">Nome:</span>
+                  <p className="text-gray-600">{companyInfo.nome}</p>
+                </div>
+                <div>
+                  <span className="font-semibold text-gray-700">NUIT:</span>
+                  <p className="text-gray-600">{companyInfo.nuit}</p>
+                </div>
+                <div>
+                  <span className="font-semibold text-gray-700">Endereço:</span>
+                  <p className="text-gray-600">{companyInfo.endereco}</p>
+                </div>
+                {companyInfo.contacto && (
+                  <div>
+                    <span className="font-semibold text-gray-700">Contacto:</span>
+                    <p className="text-gray-600">{companyInfo.contacto}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </SettingsCard>
+
+          {/* Locations */}
+          <SettingsCard
+            icon={MapPin}
+            title="Localizações"
+            description="Filiais, sucursais e equipes de campo"
+          >
+            {canManage && (
+              <form onSubmit={handleAddLocation} className="mb-4 space-y-3">
+                <input
+                  type="text"
+                  placeholder="Nome da Filial/Local"
+                  value={newLocName}
+                  onChange={(e) => setNewLocName(e.target.value)}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <select
+                  title="Tipo de localização"
+                  aria-label="Tipo de localização"
+                  value={newLocType}
+                  onChange={(e) => setNewLocType(e.target.value as LocationType)}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value={LocationType.BRANCH}>Filial (Branch)</option>
+                  <option value={LocationType.FIELD}>Equipe de Campo (Field)</option>
+                </select>
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium transition flex items-center justify-center gap-2"
+                >
+                  <Plus size={18} /> Adicionar Local
+                </button>
+              </form>
+            )}
+            <div className="space-y-2">
+              {locations.filter(l => l.type !== 'CENTRAL').map((loc) => (
+                <div key={loc.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <div>
+                    <p className="font-medium text-gray-800">{loc.name}</p>
+                    <p className="text-xs text-gray-500">{loc.type}</p>
+                  </div>
+                  {canManage && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Remover "${loc.name}"?`)) {
+                          removeLocation(loc.id);
+                        }
+                      }}
+                      className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded transition"
+                      title="Remover"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </SettingsCard>
+        </div>
+      )}
+
+      {/* ===== TAB: CATALOG ===== */}
+      {activeTab === 'catalog' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Item Types */}
+          <SettingsCard
+            icon={Box}
+            title="Tipos de Item"
+            description="Ativo (durável) ou Consumível"
+          >
+            {canManage && (
+              <form onSubmit={handleAddItemType} className="mb-4 space-y-3">
+                <input
+                  type="text"
+                  placeholder="Ex: Ferramenta Elétrica"
+                  value={newTypeName}
+                  onChange={(e) => setNewTypeName(e.target.value)}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <select
+                  title="Comportamento do item"
+                  aria-label="Comportamento do item"
+                  value={newTypeBehavior}
+                  onChange={(e) => setNewTypeBehavior(e.target.value as ItemType)}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value={ItemType.ASSET}>Ativo (Durável)</option>
+                  <option value={ItemType.CONSUMABLE}>Consumível</option>
+                </select>
+                <button
+                  type="submit"
+                  className="w-full bg-emerald-600 text-white py-2.5 rounded-lg hover:bg-emerald-700 font-medium transition flex items-center justify-center gap-2"
+                >
+                  <Plus size={18} /> Adicionar Tipo
+                </button>
+              </form>
+            )}
+            <div className="space-y-2">
+              {itemTypes.map((type) => (
+                <div key={type.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                  <p className="font-medium text-gray-800">{type.name}</p>
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                    type.behavior === ItemType.ASSET
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-purple-100 text-purple-700'
+                  }`}>
+                    {type.behavior === ItemType.ASSET ? 'Ativo' : 'Consumível'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </SettingsCard>
+
+          {/* Units of Measure */}
+          <SettingsCard
+            icon={Scale}
+            title="Unidades de Medida"
+            description="Ex: Kg, Litros, Unidade"
+          >
+            {canManage && (
+              <form onSubmit={handleAddUnit} className="mb-4 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Ex: Kg, Litros"
+                  value={newUnit}
+                  onChange={(e) => setNewUnit(e.target.value)}
+                  className="flex-1 border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="bg-emerald-600 text-white p-2.5 rounded-lg hover:bg-emerald-700 transition"
+                  title="Adicionar"
+                >
+                  <Plus size={18} />
+                </button>
+              </form>
+            )}
+            <div className="space-y-2">
+              {measureUnits.map((unit, idx) => (
+                <div key={idx} className="bg-gray-50 p-3 rounded-lg font-medium text-gray-800 border border-gray-200">
+                  {unit}
+                </div>
+              ))}
+            </div>
+          </SettingsCard>
+
+          {/* Categories */}
+          <SettingsCard
+            icon={Tag}
+            title="Categorias de Itens"
+            description="Classificação de produtos"
+          >
+            {canManage && (
+              <form onSubmit={handleAddCategory} className="mb-4 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Ex: EPI, Ferramentas"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="flex-1 border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="bg-emerald-600 text-white p-2.5 rounded-lg hover:bg-emerald-700 transition"
+                  title="Adicionar"
+                >
+                  <Plus size={18} />
+                </button>
+              </form>
+            )}
+            <div className="space-y-2">
+              {categories.map((cat, idx) => (
+                <div key={idx} className="bg-gray-50 p-3 rounded-lg font-medium text-gray-800 border border-gray-200">
+                  {cat}
+                </div>
+              ))}
+            </div>
+          </SettingsCard>
+        </div>
+      )}
+
+      {/* ===== TAB: FINANCE ===== */}
+      {activeTab === 'finance' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Payment Methods */}
+          <SettingsCard
+            icon={CreditCard}
+            title="Métodos de Pagamento"
+            description="Cash, Cartão, Mobile Money, etc"
+          >
+            {canManage && (
+              <form onSubmit={handleAddPaymentMethod} className="mb-4 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Ex: PayPal, Crypto"
+                  value={newPaymentMethod}
+                  onChange={(e) => setNewPaymentMethod(e.target.value)}
+                  className="flex-1 border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="bg-emerald-600 text-white p-2.5 rounded-lg hover:bg-emerald-700 transition"
+                  title="Adicionar método de pagamento"
+                  aria-label="Adicionar método de pagamento"
+                >
+                  <Plus size={18} />
+                </button>
+              </form>
+            )}
+            <div className="space-y-2">
+              {paymentMethods.map((method, idx) => (
+                <div key={idx} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <p className="font-medium text-gray-800">{method}</p>
+                  {canManage && (
+                    <button
+                      onClick={() => removePaymentMethod(method)}
+                      className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </SettingsCard>
+
+          {/* Expense Categories */}
+          <SettingsCard
+            icon={DollarSign}
+            title="Categorias de Despesas"
+            description="Classificação de gastos"
+          >
+            {canManage && (
+              <form onSubmit={handleAddExpenseCategory} className="mb-4 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Ex: Marketing, Transporte"
+                  value={newExpenseCategory}
+                  onChange={(e) => setNewExpenseCategory(e.target.value)}
+                  className="flex-1 border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="submit"
+                  className="bg-emerald-600 text-white p-2.5 rounded-lg hover:bg-emerald-700 transition"
+                  title="Adicionar categoria de despesa"
+                  aria-label="Adicionar categoria de despesa"
+                >
+                  <Plus size={18} />
+                </button>
+              </form>
+            )}
+            <div className="space-y-2">
+              {expenseCategories.map((cat, idx) => (
+                <div key={idx} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <p className="font-medium text-gray-800">{cat}</p>
+                  {canManage && (
+                    <button
+                      onClick={() => removeExpenseCategory(cat)}
+                      className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </SettingsCard>
+
+          {/* Currency */}
+          <SettingsCard
+            icon={Coins}
+            title="Moeda Padrão"
+            description="Moeda para novos documentos"
+            className="md:col-span-2"
+          >title="Moeda padrão do sistema"
+                  aria-label="Moeda padrão do sistema"
+                  
+            {canManage ? (
+              <div className="space-y-4">
+                <select
+                  value={defaultCurrency}
+                  onChange={(e) => setDefaultCurrency(e.target.value)}
+                  className="w-full border border-gray-300 p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {availableCurrencies.map(curr => (
+                    <option key={curr} value={curr}>{curr}</option>
+                  ))}
+                </select>
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <p className="text-xs text-gray-500 mb-2">Moedas Disponíveis:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {availableCurrencies.map(curr => (
+                      <span key={curr} className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-full text-sm font-semibold border border-emerald-200">
+                        {curr}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-3xl font-bold text-emerald-600 mb-2">{defaultCurrency}</p>
+                <p className="text-sm text-gray-500">Moeda padrão do sistema</p>
+              </div>
+            )}
+          </SettingsCard>
+        </div>
+      )}
+
+      {/* ===== TAB: ADMIN ===== */}
+      {activeTab === 'admin' && hasPermission('MANAGE_USERS') && (
+        <div className="space-y-6">
+          {/* Add User Button */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-800 text-lg">Gestão de Usuários</h3>
+                <p className="text-sm text-gray-500">Criar novos usuários no sistema</p>
+              </div>
+              <button
+                onClick={() => setShowUserModal(true)}
+                className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-3 rounded-lg hover:bg-emerald-700 font-medium transition shadow-sm"
+              >
+                <UserPlus size={18} />
+                Novo Usuário
+              </button>
+            </div>
+          </div>
+
+          {/* Reset Section */}
+          <div className="bg-red-50 rounded-xl border border-red-200 p-6 shadow-sm">
+            <h3 className="font-bold text-red-700 text-lg mb-2 flex items-center gap-2">
+              <SettingsIcon size={20} /> Danger Zone
+            </h3>
+            <p className="text-sm text-red-600 mb-4">
+              Ações nesta secção são irreversíveis. Apagam dados locais do navegador.
+            </p>
             <button
               onClick={handleResetLocal}
-              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 font-medium"
-              title="Resetar dados locais"
+              className="bg-red-600 text-white px-4 py-2.5 rounded-lg hover:bg-red-700 font-medium transition"
             >
               Resetar Dados Locais
             </button>
           </div>
+
+          {/* User Modal */}
+          <UserModal />
         </div>
-      </div>
+      )}
+
+      {/* If not admin, show placeholder for admin tab */}
+      {activeTab === 'admin' && !hasPermission('MANAGE_USERS') && (
+        <div className="bg-yellow-50 rounded-xl border border-yellow-200 p-8 text-center">
+          <Lock size={32} className="mx-auto text-yellow-600 mb-2" />
+          <p className="text-gray-600 font-medium">Acesso Restrito</p>
+          <p className="text-sm text-gray-500">Você não tem permissão para acessar esta secção.</p>
+        </div>
+      )}
     </div>
   );
 };

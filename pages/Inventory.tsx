@@ -509,6 +509,7 @@ export const Inventory = () => {
                                     produto: item?.name || '',
                                     quantidade: qty,
                                     unidade: item?.unit || 'Unidade',
+                                    usuario_registou: currentUser?.id || '',
                                     estado: 'confirmado'
                                 });
                                 setIsDeliverModalOpen(false);
@@ -589,7 +590,7 @@ export const Inventory = () => {
                                     onChange={e => setItemToEdit({ ...itemToEdit, type: e.target.value })}
                                 >
                                     <option value={ItemType.ASSET}>Ativo (Permanente)</option>
-                                    <option value={ItemType.LIABILITY}>Passivo (Consumível)</option>
+                                    <option value={ItemType.CONSUMABLE}>Consumível</option>
                                 </select>
                             </div>
                             <div>

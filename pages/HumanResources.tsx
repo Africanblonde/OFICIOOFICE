@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useLogistics } from '../context/useLogistics';
-import { Role, User, AttendanceStatus, DailyPerformance } from '../types';
+import { Role, User, AttendanceStatus, DailyPerformance, FichaIndividual } from '../types';
 import { formatFlexibleDate } from '../utils/dateFormatter';
 import {
     UserPlus, Users, Briefcase, MapPin, Search, X,
     Calendar, DollarSign, TrendingUp, Clock, Settings, FileText,
-    ChevronRight, User as UserIcon, CheckCircle, AlertTriangle, Save, Lock, Trash2
+    ChevronRight, User as UserIcon, CheckCircle, AlertTriangle, Save, Lock, Trash2, Plus
 } from 'lucide-react';
 
 export const HumanResources = () => {
@@ -48,35 +48,44 @@ export const HumanResources = () => {
             return;
         }
 
-        const newUser = {
-            name: formData.name,
-            email: formData.email,
-            role: formData.role,
-            locationId: formData.locationId || undefined,
-            jobTitle: formData.jobTitle,
-            defaultDailyGoal: formData.role === Role.WORKER ? formData.defaultDailyGoal : undefined,
-            dailyRate: formData.role === Role.WORKER ? formData.dailyRate : undefined,
-            halfDayRate: formData.role === Role.WORKER ? formData.halfDayRate : undefined,
-            absencePenalty: formData.role === Role.WORKER ? formData.absencePenalty : undefined,
-            bonusPerUnit: formData.role === Role.WORKER ? formData.bonusPerUnit : undefined,
-        };
+        try {
+            const newUserPayload = {
+                name: formData.name,
+                email: formData.email,
+                password: formData.password,
+                role: formData.role,
+                locationId: formData.locationId || undefined,
+                jobTitle: formData.jobTitle,
+                defaultDailyGoal: formData.role === Role.WORKER ? formData.defaultDailyGoal : undefined,
+                dailyRate: formData.role === Role.WORKER ? formData.dailyRate : undefined,
+                halfDayRate: formData.role === Role.WORKER ? formData.halfDayRate : undefined,
+                absencePenalty: formData.role === Role.WORKER ? formData.absencePenalty : undefined,
+                bonusPerUnit: formData.role === Role.WORKER ? formData.bonusPerUnit : undefined,
+            };
 
-        await addUser(newUser);
+            await addUser(newUserPayload);
 
-        // Reset
-        setFormData({
-            name: '',
-            email: '',
-            password: '',
-            role: Role.WORKER,
-            locationId: null,
-            jobTitle: '',
-            defaultDailyGoal: 10,
-            dailyRate: 236.5,
-            halfDayRate: 118,
-            absencePenalty: 95,
-            bonusPerUnit: 10
-        });
+            alert('Funcionário adicionado com sucesso!');
+
+            // Reset form
+            setFormData({
+                name: '',
+                email: '',
+                password: '',
+                role: Role.WORKER,
+                locationId: null,
+                jobTitle: '',
+                defaultDailyGoal: 10,
+                dailyRate: 236.5,
+                halfDayRate: 118,
+                absencePenalty: 95,
+                bonusPerUnit: 10
+            });
+        } catch (error) {
+            console.error("Erro ao adicionar funcionário:", error);
+            const message = error instanceof Error ? error.message : String(error);
+            alert(`Erro ao adicionar funcionário: ${message}`);
+        }
     };
 
     const handleOpenModal = (user: User) => {
@@ -401,7 +410,7 @@ export const HumanResources = () => {
                             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-200">
                                 <div className="bg-emerald-600 p-6 text-white flex justify-between items-center">
                                     <h3 className="text-xl font-bold">Nova Entrega para {selectedUser.name}</h3>
-                                    <button onClick={() => setIsLocalModalOpen(false)} className="hover:bg-white/10 p-1 rounded-full"><X size={24} /></button>
+                                    <button type="button" onClick={() => setIsLocalModalOpen(false)} title="Fechar modal" aria-label="Fechar" className="hover:bg-white/10 p-1 rounded-full"><X size={24} /></button>
                                 </div>
                                 <div className="p-6">
                                     {/* Simple Inline Form */}
@@ -409,7 +418,7 @@ export const HumanResources = () => {
                                         userId={selectedUser.id}
                                         items={items}
                                         inventory={inventory}
-                                        onSave={async (data) => {
+                                        onSave={async (data: Omit<FichaIndividual, "id" | "codigo" | "created_at" | "updated_at">) => {
                                             await createFicha(data);
                                             setIsLocalModalOpen(false);
                                         }}
@@ -513,23 +522,23 @@ export const HumanResources = () => {
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Valor Dia</label>
-                                        <input aria-label="Valor Dia" type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.dailyRate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, dailyRate: parseFloat(e.target.value) })} />
+                                        <input aria-label="Valor Dia" title="Valor Dia" type="number" step="0.1" placeholder="0.00" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.dailyRate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, dailyRate: parseFloat(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Valor Meio Dia</label>
-                                        <input aria-label="Valor Meio Dia" type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.halfDayRate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, halfDayRate: parseFloat(e.target.value) })} />
+                                        <input aria-label="Valor Meio Dia" title="Valor Meio Dia" type="number" step="0.1" placeholder="0.00" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.halfDayRate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, halfDayRate: parseFloat(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Valor Falta</label>
-                                        <input aria-label="Valor Falta" type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.absencePenalty} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, absencePenalty: parseFloat(e.target.value) })} />
+                                        <input aria-label="Valor Falta" title="Valor Falta" type="number" step="0.1" placeholder="0.00" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.absencePenalty} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, absencePenalty: parseFloat(e.target.value) })} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Bónus (Unid)</label>
-                                        <input aria-label="Bónus (Unid)" type="number" step="0.1" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.bonusPerUnit} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, bonusPerUnit: parseFloat(e.target.value) })} />
+                                        <input aria-label="Bónus (Unid)" title="Bónus por Unidade" type="number" step="0.1" placeholder="0.00" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.bonusPerUnit} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, bonusPerUnit: parseFloat(e.target.value) })} />
                                     </div>
                                     <div className="col-span-2">
                                         <label className="block text-xs font-medium text-gray-700 mb-1">Meta Diária (Produção)</label>
-                                        <input aria-label="Meta Diária (Produção)" type="number" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.defaultDailyGoal} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, defaultDailyGoal: parseFloat(e.target.value) })} />
+                                        <input aria-label="Meta Diária (Produção)" title="Meta Diária" type="number" placeholder="0" className="w-full border rounded p-1 text-sm bg-white text-gray-900" value={formData.defaultDailyGoal} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, defaultDailyGoal: parseFloat(e.target.value) })} />
                                     </div>
                                 </div>
                             </div>
@@ -539,6 +548,7 @@ export const HumanResources = () => {
                             <label className="block text-sm font-medium text-gray-700 mb-1">Departamento / Alocação</label>
                             <select
                                 aria-label="Departamento / Alocação"
+                                title="Selecione o departamento"
                                 className="w-full border rounded p-2 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
                                 value={formData.locationId || ''}
                                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, locationId: e.target.value })}

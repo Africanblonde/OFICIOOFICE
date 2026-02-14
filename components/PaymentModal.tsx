@@ -68,19 +68,25 @@ export default function PaymentModal({ invoice, onClose, onConfirm }: Props) {
 
             <div className="space-y-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor a Pagar</label>
+                    <label htmlFor="payment-amount" className="block text-sm font-medium text-gray-700 mb-1">Valor a Pagar</label>
                     <div className="relative">
                         <span className="absolute left-3 top-2.5 text-gray-400 font-bold text-sm">{invoice.moeda}</span>
-                        <input 
+                        <input
+                            id="payment-amount"
+                            aria-label="Valor a pagar"
+                            title="Valor a pagar"
                             type="number" step="0.01"
                             className="w-full pl-12 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-lg font-bold text-gray-900 bg-white"
-                            value={amount || ''}
-                            onChange={e => setAmount(parseFloat(e.target.value))}
+                            value={amount === 0 ? '' : amount}
+                            onChange={e => {
+                              const v = e.target.value;
+                              setAmount(v === '' ? 0 : parseFloat(v));
+                            }}
                             placeholder={remaining.toFixed(2)}
                         />
                     </div>
                     <div className="flex justify-end gap-2 mt-2">
-                        <button onClick={() => setAmount(remaining)} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100 font-medium hover:bg-blue-100">
+                        <button title="Pagar o valor total" onClick={() => setAmount(remaining)} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100 font-medium hover:bg-blue-100">
                             Pagar Total
                         </button>
                     </div>
@@ -88,8 +94,11 @@ export default function PaymentModal({ invoice, onClose, onConfirm }: Props) {
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Método</label>
-                        <select 
+                        <label htmlFor="payment-method" className="block text-sm font-medium text-gray-700 mb-1">Método</label>
+                        <select
+                            id="payment-method"
+                            title="Método de pagamento"
+                            aria-label="Método de pagamento"
                             className="w-full border rounded-lg p-2 bg-white text-gray-900"
                             value={method}
                             onChange={e => setMethod(e.target.value as PaymentMethod)}
@@ -102,8 +111,11 @@ export default function PaymentModal({ invoice, onClose, onConfirm }: Props) {
                         </select>
                     </div>
                     <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-1">Referência</label>
-                         <input 
+                         <label htmlFor="payment-ref" className="block text-sm font-medium text-gray-700 mb-1">Referência</label>
+                         <input
+                            id="payment-ref"
+                            title="Referência do pagamento"
+                            aria-label="Referência do pagamento"
                             type="text"
                             className="w-full border rounded-lg p-2 bg-white text-gray-900"
                             placeholder="Ex: Talão 123"
@@ -113,7 +125,8 @@ export default function PaymentModal({ invoice, onClose, onConfirm }: Props) {
                     </div>
                 </div>
 
-                <button 
+                <button
+                    title="Confirmar recebimento"
                     onClick={handlePay}
                     className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 shadow-md flex items-center justify-center gap-2 mt-4"
                 >

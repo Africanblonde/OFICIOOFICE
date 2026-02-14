@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
+import { LOCATIONS } from '../constants';
 import { LogIn, UserPlus, Loader2 } from 'lucide-react';
 
 interface AuthPageProps {
@@ -11,6 +12,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
+    const [jobTitle, setJobTitle] = useState('');
+    const [locationId, setLocationId] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
@@ -45,13 +48,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
         setError(null);
 
         try {
+            // Build metadata object for auth user (trigger will map these into profile when possible)
+            const userMeta: any = { name };
+            if (jobTitle) userMeta.jobTitle = jobTitle;
+            if (locationId) userMeta.locationId = locationId;
+
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
                 options: {
-                    data: {
-                        name: name,
-                    },
+                    data: userMeta,
                 },
             });
 
@@ -131,20 +137,50 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
 
                     {/* Form */}
                     <form onSubmit={isLogin ? handleLogin : handleSignup} className="space-y-4">
-                        {!isLogin && (
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Nome Completo
-                                </label>
-                                <input
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                    placeholder="João Silva"
-                                    required={!isLogin}
-                                />
-                            </div>
+                                    {!isLogin && (
+                            <>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Nome Completo
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                        placeholder="João Silva"
+                                        required={!isLogin}
+                                        aria-label="Nome completo"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Cargo (opcional)</label>
+                                    <input
+                                        type="text"
+                                        value={jobTitle}
+                                        onChange={(e) => setJobTitle(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                        placeholder="Ex.: Motosserrista"
+                                        aria-label="Cargo"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Local (opcional)</label>
+                                    <select
+                                        value={locationId}
+                                        onChange={(e) => setLocationId(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                                        aria-label="Localização"
+                                    >
+                                        <option value="">Sem local</option>
+                                        {LOCATIONS.map(loc => (
+                                            <option key={loc.id} value={loc.id}>{loc.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </>
                         )}
 
                         <div>

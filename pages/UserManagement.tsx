@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { Role } from '../types';
 import createUserWithEdge from '../services/userService';
+import { LOCATIONS } from '../constants';
 
 const UserManagement: React.FC = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>(Role.WORKER);
+  const [locationId, setLocationId] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
   const [status, setStatus] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -18,6 +21,8 @@ const UserManagement: React.FC = () => {
       email,
       password,
       role: String(role),
+      locationId: locationId || undefined,
+      jobTitle: jobTitle || undefined
     };
 
     try {
@@ -58,6 +63,19 @@ const UserManagement: React.FC = () => {
             <option value={Role.GENERAL_MANAGER}>GENERAL_MANAGER</option>
             <option value={Role.MANAGER}>MANAGER</option>
             <option value={Role.WORKER}>WORKER</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="um-job" className="block text-sm font-medium">Cargo</label>
+          <input id="um-job" placeholder="Cargo (ex.: Motosserrista)" value={jobTitle} onChange={e => setJobTitle(e.target.value)} className="mt-1 block w-full border rounded p-2" />
+        </div>
+
+        <div>
+          <label htmlFor="um-location" className="block text-sm font-medium">Local</label>
+          <select id="um-location" value={locationId} onChange={e => setLocationId(e.target.value)} className="mt-1 block w-full border rounded p-2">
+            <option value="">-- Selecionar --</option>
+            {LOCATIONS.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
         <div>
