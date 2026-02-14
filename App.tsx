@@ -16,6 +16,7 @@ import { FichasIndividuais } from './pages/FichasIndividuais';
 import ContasAReceber from './pages/ContasAReceber';
 import ExpenseApprovals from './pages/ExpenseApprovals';
 import ExpenseBudgetReports from './pages/ExpenseBudgetReports';
+import ChatDock from './components/ChatDock';
 import { AuthPage } from './pages/AuthPage';
 import { supabase } from './services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
@@ -91,6 +92,7 @@ function App() {
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         {renderContent()}
       </Layout>
+      <ChatDock />
     </LogisticsProvider>
   );
 }
