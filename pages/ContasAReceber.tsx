@@ -31,6 +31,7 @@ import { formatFlexibleDate } from '../utils/dateFormatter';
 export default function ContasAReceber() {
   const { invoices, selectedDepartmentId } = useLogistics();
   const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'clientes' | 'faturas' | 'parcelamentos'>(
     'overview'
   );
@@ -66,7 +67,7 @@ export default function ContasAReceber() {
       setAllClientBalances(balancesData);
       setOverdueInstallments(installmentsData);
     } catch (err) {
-      console.error('Error loading collections data:', err);
+      setStatus({ type: 'error', message: `Error loading collections data: ${err instanceof Error ? err.message : String(err)}` });
     } finally {
       setLoading(false);
     }
@@ -108,6 +109,16 @@ export default function ContasAReceber() {
           Dashboard de cobranças, atrasos e parcelamentos
         </p>
       </div>
+
+      {status && (
+        <div className={`p-3 rounded text-sm mb-6 ${
+          status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+          status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' :
+          'bg-blue-50 border border-blue-100 text-blue-800'
+        }`}>
+          {status.message}
+        </div>
+      )}
 
       {/* KPI CARDS */}
       {stats && (

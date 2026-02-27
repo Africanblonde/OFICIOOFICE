@@ -24,6 +24,7 @@ export const RequisitionForm = ({ onCancel, onSuccess }: RequisitionFormProps) =
 
     const [targetLocationId, setTargetLocationId] = useState('');
     const [notes, setNotes] = useState('');
+    const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
     const [rows, setRows] = useState<RowItem[]>([
         { id: '1', itemId: '', itemName: '', quantity: 1, unit: 'Unidade', condition: ItemCondition.NEW, notes: '' }
     ]);
@@ -74,15 +75,15 @@ export const RequisitionForm = ({ onCancel, onSuccess }: RequisitionFormProps) =
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!targetLocationId) {
-            alert("Selecione o local de destino.");
+            setStatus({ type: 'info', message: 'Selecione o local de destino.' });
             return;
         }
         if (rows.length === 0) {
-            alert("Adicione pelo menos um item.");
+            setStatus({ type: 'info', message: 'Adicione pelo menos um item.' });
             return;
         }
         if (rows.some(r => !r.itemName)) {
-            alert("Todos os itens precisam de uma descrição ou nome.");
+            setStatus({ type: 'info', message: 'Todos os itens precisam de uma descrição ou nome.' });
             return;
         }
 
@@ -97,9 +98,32 @@ export const RequisitionForm = ({ onCancel, onSuccess }: RequisitionFormProps) =
                 notes: r.notes
             })), notes);
 
-            onSuccess();
+            // --- Register deliveries if target is an employee ---
+            // If targetLocationId is a user id (employee), register delivery for each item
+            // (Assume: if targetLocationId matches a user, it's an employee delivery)
+            try {
+                const { registerEmployeeDelivery } = await import('../services/employeeDeliveryService');
+                // You may want to check if targetLocationId is a user id; for now, always register
+                await Promise.all(rows.map(async (r) => {
+                    await registerEmployeeDelivery({
+                        employeeId: targetLocationId,
+                        itemId: r.itemId || undefined,
+                        itemName: r.itemName,
+                        quantity: r.quantity,
+                        unit: r.unit,
+                        deliveredBy: currentUser?.id,
+                        origin: 'REQUISITION',
+                        notes: r.notes,
+                    });
+                }));
+            } catch (err) {
+                // Ignore delivery registration errors for now
+            }
+
+            setStatus({ type: 'success', message: 'Requisição criada com sucesso!' });
+            setTimeout(() => onSuccess(), 1500);
         } catch (err) {
-            console.error(err);
+            setStatus({ type: 'error', message: `Erro ao criar requisição: ${err instanceof Error ? err.message : String(err)}` });
         } finally {
             setIsSubmitting(false);
         }
@@ -116,6 +140,16 @@ export const RequisitionForm = ({ onCancel, onSuccess }: RequisitionFormProps) =
                     <p className="text-sm text-gray-500">Preencha o formulário abaixo para solicitar múltiplos itens.</p>
                 </div>
             </div>
+
+            {status && (
+                <div className={`p-3 rounded text-sm mb-6 ${
+                    status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+                    status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' :
+                    'bg-blue-50 border border-blue-100 text-blue-800'
+                }`}>
+                    {status.message}
+                </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Header Section */}

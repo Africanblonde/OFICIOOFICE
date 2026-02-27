@@ -30,6 +30,8 @@
   },
   "exclude": [
     "supabase",
-    "scripts"
+    "scripts",
+    "dist",
+    "node_modules"
   ]
 }

@@ -23,6 +23,7 @@ const Faturamento: React.FC = () => {
   } = useLogistics();
 
   const [activeTab, setActiveTab] = useState<'centros-custo' | 'itens-pendentes'>('centros-custo');
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
 
   const [costCenterForm, setCostCenterForm] = useState<Partial<CostCenter>>({
     name: '',
@@ -69,11 +70,12 @@ const Faturamento: React.FC = () => {
       } else {
         await addCostCenter(costCenterForm as any);
       }
+      setStatus({ type: 'success', message: 'Centro de custo salvo com sucesso!' });
+      setTimeout(() => setStatus(null), 3000);
       resetCostCenter();
       setIsCostCenterOpen(false);
     } catch (err) {
-      console.error(err);
-      alert('Erro ao salvar centro de custo');
+      setStatus({ type: 'error', message: `Erro ao salvar centro de custo: ${err instanceof Error ? err.message : String(err)}` });
     }
   };
 
@@ -90,11 +92,12 @@ const Faturamento: React.FC = () => {
       } else {
         await createPendingInvoiceItem(pendingForm as any);
       }
+      setStatus({ type: 'success', message: 'Item pendente salvo com sucesso!' });
+      setTimeout(() => setStatus(null), 3000);
       resetPending();
       setIsPendingOpen(false);
     } catch (err) {
-      console.error(err);
-      alert('Erro ao salvar item pendente');
+      setStatus({ type: 'error', message: `Erro ao salvar item pendente: ${err instanceof Error ? err.message : String(err)}` });
     }
   };
 
@@ -140,6 +143,16 @@ const Faturamento: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {status && (
+        <div className={`p-3 rounded text-sm ${
+          status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+          status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' :
+          'bg-blue-50 border border-blue-100 text-blue-800'
+        }`}>
+          {status.message}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded shadow-sm border">

@@ -13,10 +13,10 @@ import { POS } from './pages/POS';
 import { Permissions } from './pages/Permissions';
 import { Payroll } from './pages/Payroll';
 import { FichasIndividuais } from './pages/FichasIndividuais';
+import { Chat } from './pages/Chat';
 import ContasAReceber from './pages/ContasAReceber';
 import ExpenseApprovals from './pages/ExpenseApprovals';
 import ExpenseBudgetReports from './pages/ExpenseBudgetReports';
-import ChatDock from './components/ChatDock';
 import { AuthPage } from './pages/AuthPage';
 import { supabase } from './services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
@@ -46,6 +46,7 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard': return <Dashboard onNavigate={setActiveTab} />;
+      case 'chat': return <Chat />;
       case 'requisitions': return <Requisitions />;
       case 'inventory': return <Inventory />;
       case 'performance': return <Performance />;
@@ -92,7 +93,6 @@ function App() {
       <Layout activeTab={activeTab} onTabChange={setActiveTab}>
         {renderContent()}
       </Layout>
-      <ChatDock />
     </LogisticsProvider>
   );
 }

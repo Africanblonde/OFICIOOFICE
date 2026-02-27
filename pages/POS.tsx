@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useLogistics } from '../context/useLogistics';
-import { PaymentMethod, CartItem, TransactionType, Invoice, DocumentType, Client } from '../types';
+import { PaymentMethod, CartItem, TransactionType, Invoice, DocumentType, Client, InvoiceItem } from '../types';
 import { formatFlexibleDate } from '../utils/dateFormatter';
 import InvoiceModal from '../components/InvoiceModal';
 import {
@@ -23,11 +23,12 @@ import {
     Users,
     UserPlus,
     ArrowRight,
-    CheckCircle
+    CheckCircle,
+    X
 } from 'lucide-react';
 
 export const POS = () => {
-    const { items, inventory, currentUser, processSale, registerExpense, transactions, invoices, addInvoice, updateInvoice, getNextInvoiceNumber, hasPermission, locations, clients, addClient, updateClient, getClientBalance, companyInfo } = useLogistics();
+    const { items, inventory, currentUser, processSale, registerExpense, transactions, invoices, addInvoice, updateInvoice, getNextInvoiceNumber, hasPermission, locations, clients, addClient, updateClient, getClientBalance, companyInfo, costCenters, expenseCategories, paymentMethods: contextPaymentMethods } = useLogistics();
     const [activeTab, setActiveTab] = useState<'terminal' | 'expenses' | 'invoices' | 'history' | 'clients'>('terminal');
 
     // POS State
@@ -39,10 +40,24 @@ export const POS = () => {
     const [searchTerm, setSearchTerm] = useState('');
 
     // Expense State
-    const [expenseDesc, setExpenseDesc] = useState('');
-    const [expenseCategory, setExpenseCategory] = useState('');
-    const [expenseAmount, setExpenseAmount] = useState<number>(0);
-    const [expenseMethod, setExpenseMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
+    const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+    const [expenseForm, setExpenseForm] = useState<{
+        description: string;
+        category: string;
+        amount: number;
+        paymentMethod: PaymentMethod;
+        date: string;
+        costCenterId: string;
+        receiptNumber: string;
+    }>({
+        description: '',
+        category: '',
+        amount: 0,
+        paymentMethod: PaymentMethod.CASH,
+        date: new Date().toISOString().slice(0, 10),
+        costCenterId: '',
+        receiptNumber: ''
+    });
 
     // Invoice State
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
@@ -62,11 +77,16 @@ export const POS = () => {
     const [historyStartDate, setHistoryStartDate] = useState<string | null>(null);
     const [historyEndDate, setHistoryEndDate] = useState<string | null>(null);
     const [historySearch, setHistorySearch] = useState('');
+    const [historyLocationFilter, setHistoryLocationFilter] = useState<string>('ALL');
     const [historyPage, setHistoryPage] = useState(1);
     const [historyPageSize, setHistoryPageSize] = useState(20);
+    const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
 
-    const exportTransactionsToCSV = () => {
-        const byLocation = transactions.filter(tx => !currentUser?.locationId || tx.locationId === currentUser.locationId);
+    // Helper to apply all history filters consistently
+    const applyHistoryFilters = (txList: typeof transactions) => {
+        const byLocation = historyLocationFilter !== 'ALL'
+            ? txList.filter(tx => tx.locationId === historyLocationFilter)
+            : txList;
         const byType = byLocation.filter(tx => historyTypeFilter === 'ALL' ? true : tx.type === historyTypeFilter);
         const byDate = byType.filter(tx => {
             if (!historyStartDate && !historyEndDate) return true;
@@ -75,24 +95,27 @@ export const POS = () => {
             if (historyEndDate && d > historyEndDate) return false;
             return true;
         });
-        const bySearch = byDate.filter(tx => {
+        return byDate.filter(tx => {
             const q = historySearch.toLowerCase();
             if (!q) return true;
             return (tx.clientName || '').toLowerCase().includes(q) || (tx.description || '').toLowerCase().includes(q) || (tx.category || '').toLowerCase().includes(q);
         });
+    };
 
-        if (bySearch.length === 0) return;
+    const exportTransactionsToCSV = () => {
+        const filtered = applyHistoryFilters(transactions);
+        if (filtered.length === 0) return;
 
-        const rows = bySearch.map(tx => ({
+        const rows = filtered.map(tx => ({
             id: tx.id,
             date: tx.date,
             type: tx.type,
+            localizacao: locations.find(l => l.id === tx.locationId)?.name || tx.locationId || '',
             client: tx.clientName || '',
             description: tx.description || '',
             category: tx.category || '',
             amount: tx.amount,
             paymentMethod: tx.paymentMethod || '',
-            locationId: tx.locationId || ''
         }));
 
         const header = Object.keys(rows[0]).join(',') + '\n';
@@ -101,7 +124,7 @@ export const POS = () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `transacoes_${historyLocationFilter !== 'ALL' ? locations.find(l => l.id === historyLocationFilter)?.name + '_' : ''}${new Date().toISOString().slice(0, 10)}.csv`;
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -169,28 +192,23 @@ export const POS = () => {
 
         // Task 1.4: Auto-link POS items to invoice
         // Ensure all items have proper itemId and are tracking inventory items
+        const items: InvoiceItem[] = cart.map(item => ({
+            itemId: item.itemId,
+            descricao: item.name,
+            quantidade: item.quantity,
+            precoUnitario: item.unitPrice,
+            impostoPercent: 16 // Default VAT for POS
+        }));
+
         const draftInvoice: Partial<Invoice> = {
             tipo: 'FATURA_RECIBO', // Default to Receipt since it's POS
-            status: 'PAGA', // Assume Paid, but user can change in modal
+            status: 'PAGA', // Assume Paid in POS
             cliente: {
                 id: selectedClientId || undefined,
                 nome: clientName,
-                nuit: clientNuit,
-                endereco: '',
-                contacto: ''
+                nuit: clientNuit
             },
-            itens: cart.map(item => ({
-                itemId: item.itemId, // Maintain link to inventory item
-                descricao: item.name,
-                quantidade: item.quantity,
-                precoUnitario: item.unitPrice,
-                impostoPercent: 16 // Task 1.1: Default VAT to 16% MZN
-            })),
-            pagamentos: [{
-                data: new Date().toISOString(),
-                valor: grandTotal,
-                modalidade: paymentMethod
-            }],
+            itens: items,
             observacoes: 'Venda via POS Terminal - Rastreabilidade: Itens do inventário'
         };
 
@@ -203,12 +221,23 @@ export const POS = () => {
 
     const handleExpenseSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (expenseAmount <= 0) return;
-        registerExpense(expenseDesc, expenseCategory, expenseAmount, expenseMethod);
-        setExpenseDesc('');
-        setExpenseCategory('');
-        setExpenseAmount(0);
-        setExpenseMethod(PaymentMethod.CASH);
+        if (expenseForm.amount <= 0) return;
+        registerExpense(
+            expenseForm.description,
+            expenseForm.category || expenseCategories?.[0] || 'Outros',
+            expenseForm.amount,
+            expenseForm.paymentMethod,
+            new Date(expenseForm.date).toISOString(),
+            expenseForm.costCenterId || null,
+            expenseForm.receiptNumber
+        );
+        setIsExpenseModalOpen(false);
+        setExpenseForm({
+            ...expenseForm,
+            description: '',
+            amount: 0,
+            receiptNumber: ''
+        });
     };
 
     // --- INVOICE LOGIC ---
@@ -226,6 +255,7 @@ export const POS = () => {
     }
 
     const handleSaveInvoice = async (inv: Invoice) => {
+        setStatus({ type: 'info', message: 'Gravando documento...' });
         try {
             // Check if ID exists to determine update vs add
             const exists = invoices.find(i => i.id === inv.id);
@@ -245,9 +275,10 @@ export const POS = () => {
                 setPaymentMethod(PaymentMethod.CASH);
                 setIsPosCheckout(false);
             }
-        } catch (error) {
-            console.error('Erro ao guardar fatura:', error);
-            alert('Erro ao guardar fatura. Por favor tente novamente.');
+            setStatus({ type: 'success', message: 'Documento guardado.' });
+            setTimeout(() => setStatus(null), 3500);
+        } catch (error: any) {
+            setStatus({ type: 'error', message: `Erro ao guardar fatura: ${error?.message || String(error)}` });
         }
     }
 
@@ -289,38 +320,45 @@ export const POS = () => {
             <div className="flex gap-2 border-b border-gray-200 pb-2 overflow-x-auto hide-scrollbar">
                 <button
                     onClick={() => setActiveTab('terminal')}
-                    className={`px-4 py-2 font-medium text-sm rounded-full whitespace-nowrap ${activeTab === 'terminal' ? 'bg-blue-600 text-white shadow' : 'bg-white text-gray-600 border border-gray-100'}`}
+                    className={`px-4 py-2 font-black uppercase tracking-widest text-xs rounded-full whitespace-nowrap transition-all ${activeTab === 'terminal' ? 'bg-emerald-600 text-black shadow-lg shadow-emerald-200' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}
                 >
                     Terminal
                 </button>
                 {hasPermission('VIEW_INVOICES') && (
                     <button
                         onClick={() => setActiveTab('invoices')}
-                        className={`px-4 py-2 font-medium text-sm rounded-full whitespace-nowrap flex items-center gap-2 ${activeTab === 'invoices' ? 'bg-indigo-600 text-white shadow' : 'bg-white text-gray-600 border border-gray-100'}`}
+                        className={`px-4 py-2 font-black uppercase tracking-widest text-xs rounded-full whitespace-nowrap flex items-center gap-2 transition-all ${activeTab === 'invoices' ? 'bg-indigo-600 text-black shadow-lg shadow-indigo-200' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}
                     >
                         <FileText size={16} /> Documentos
                     </button>
                 )}
                 <button
                     onClick={() => setActiveTab('clients')}
-                    className={`px-4 py-2 font-medium text-sm rounded-full whitespace-nowrap flex items-center gap-2 ${activeTab === 'clients' ? 'bg-green-600 text-white shadow' : 'bg-white text-gray-600 border border-gray-100'}`}
+                    className={`px-4 py-2 font-black uppercase tracking-widest text-xs rounded-full whitespace-nowrap flex items-center gap-2 transition-all ${activeTab === 'clients' ? 'bg-emerald-100 text-emerald-900 shadow-sm border border-emerald-200' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}
                 >
                     <Users size={16} /> Clientes
                 </button>
                 <button
                     onClick={() => setActiveTab('expenses')}
-                    className={`px-4 py-2 font-medium text-sm rounded-full whitespace-nowrap ${activeTab === 'expenses' ? 'bg-orange-600 text-white shadow' : 'bg-white text-gray-600 border border-gray-100'}`}
+                    className={`px-4 py-2 font-black uppercase tracking-widest text-xs rounded-full whitespace-nowrap transition-all ${activeTab === 'expenses' ? 'bg-orange-500 text-black shadow-lg shadow-orange-200' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}
                 >
                     Despesas
                 </button>
                 <button
                     onClick={() => setActiveTab('history')}
-                    className={`px-4 py-2 font-medium text-sm rounded-full whitespace-nowrap ${activeTab === 'history' ? 'bg-gray-600 text-white shadow' : 'bg-white text-gray-600 border border-gray-100'}`}
+                    className={`px-4 py-2 font-black uppercase tracking-widest text-xs rounded-full whitespace-nowrap transition-all ${activeTab === 'history' ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'}`}
                 >
                     Histórico
                 </button>
             </div>
 
+            {status && (
+                <div className={`mt-3 p-3 rounded ${status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+                    status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' : 'bg-blue-50 border border-blue-100 text-blue-800'
+                    }`}>
+                    {status.message}
+                </div>
+            )}
             {activeTab === 'terminal' && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto lg:h-[calc(100vh-220px)] pb-20 lg:pb-0">
                     {/* Left: Product Grid */}
@@ -465,7 +503,7 @@ export const POS = () => {
                                         aria-label={`Método de pagamento: ${m.label}`}
                                         title={`Selecionar ${m.label}`}
                                         onClick={() => setPaymentMethod(m.id)}
-                                        className={`flex items-center justify-center gap-1 py-2 rounded text-[10px] md:text-xs font-bold border transition ${paymentMethod === m.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                                        className={`flex items-center justify-center gap-1 py-2 rounded-lg text-[10px] md:text-xs font-black uppercase tracking-tighter border transition-all ${paymentMethod === m.id ? 'bg-emerald-600 text-black shadow-lg shadow-emerald-200 border-emerald-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
                                     >
                                         <m.icon size={12} /> {m.label}
                                     </button>
@@ -475,7 +513,7 @@ export const POS = () => {
                             <button
                                 onClick={handleCheckout}
                                 disabled={cart.length === 0}
-                                className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                className="w-full bg-emerald-600 text-black py-3 rounded-xl font-black hover:bg-emerald-500 transition shadow-lg shadow-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-widest text-sm"
                             >
                                 <CheckCircle size={20} /> Finalizar Venda
                             </button>
@@ -497,7 +535,7 @@ export const POS = () => {
                                 onChange={e => setInvoiceSearch(e.target.value)}
                             />
                         </div>
-                        <button onClick={handleNewInvoice} className="bg-blue-600 text-white p-2 md:px-4 md:py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-sm ml-2 shrink-0">
+                        <button onClick={handleNewInvoice} className="bg-emerald-600 text-black p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 hover:bg-emerald-500 shadow-lg shadow-emerald-100 ml-2 shrink-0 font-black uppercase text-xs tracking-widest transition-all">
                             <Plus size={18} /> <span className="hidden md:inline">Novo</span>
                         </button>
                     </div>
@@ -572,7 +610,7 @@ export const POS = () => {
                                 setClientForm({});
                                 setIsClientModalOpen(true);
                             }}
-                            className="bg-green-600 text-white p-2 md:px-4 md:py-2 rounded-lg flex items-center gap-2 hover:bg-green-700 ml-2 shrink-0 shadow-sm"
+                            className="bg-emerald-600 text-black p-2 md:px-4 md:py-2 rounded-xl flex items-center gap-2 hover:bg-emerald-500 ml-2 shrink-0 shadow-lg shadow-emerald-100 font-black uppercase tracking-widest text-xs transition-all"
                         >
                             <UserPlus size={18} /> <span className="hidden md:inline">Novo</span>
                         </button>
@@ -617,7 +655,7 @@ export const POS = () => {
                 </div>
             )}
 
-            {/* Other Tabs (Expenses, History) remain mostly same but ensured container responsiveness */}
+            {/* History Tab */}
             {activeTab === 'history' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[calc(100vh-220px)]">
                     <div className="p-4 border-b border-gray-100 flex justify-between items-center sticky top-0 z-10 bg-white">
@@ -625,78 +663,85 @@ export const POS = () => {
                             <History size={20} className="text-gray-600" />
                             <h3 className="font-bold text-gray-800">Histórico Financeiro</h3>
                         </div>
-                        <div className="text-sm text-gray-500">Mostrando transações da sua localização</div>
-                    </div>
-                    <div className="p-4 border-t bg-white flex items-center justify-between">
-                        {(() => {
-                            const byLocation = transactions.filter(tx => !currentUser?.locationId || tx.locationId === currentUser.locationId);
-                            const byType = byLocation.filter(tx => historyTypeFilter === 'ALL' ? true : tx.type === historyTypeFilter);
-                            const byDate = byType.filter(tx => {
-                                if (!historyStartDate && !historyEndDate) return true;
-                                const d = tx.date ? tx.date.slice(0, 10) : '';
-                                if (historyStartDate && d < historyStartDate) return false;
-                                if (historyEndDate && d > historyEndDate) return false;
-                                return true;
-                            });
-                            const bySearch = byDate.filter(tx => {
-                                const q = historySearch.toLowerCase();
-                                if (!q) return true;
-                                return (tx.clientName || '').toLowerCase().includes(q) || (tx.description || '').toLowerCase().includes(q) || (tx.category || '').toLowerCase().includes(q);
-                            });
-
-                            const total = bySearch.length;
-                            const start = (historyPage - 1) * historyPageSize;
-                            const pageItems = bySearch.slice(start, start + historyPageSize);
-
-                            return (
-                                <>
-                                    <div className="text-sm text-gray-600">Mostrando {total === 0 ? 0 : start + 1} - {Math.min(start + pageItems.length, total)} de {total}</div>
-                                    <div className="flex items-center gap-2">
-                                        <button disabled={historyPage === 1} onClick={() => setHistoryPage(historyPage - 1)} className="px-3 py-1 bg-gray-100 rounded text-sm disabled:opacity-50">Anterior</button>
-                                        <div className="text-sm text-gray-600">Página {historyPage}</div>
-                                        <button disabled={(historyPage * historyPageSize) >= total} onClick={() => setHistoryPage(historyPage + 1)} className="px-3 py-1 bg-gray-100 rounded text-sm disabled:opacity-50">Próxima</button>
-                                    </div>
-                                </>
-                            );
-                        })()}
+                        {historyLocationFilter !== 'ALL' && (
+                            <span className="text-sm font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                                📍 {locations.find(l => l.id === historyLocationFilter)?.name}
+                            </span>
+                        )}
                     </div>
 
-                    <div className="p-4 border-b border-gray-100 flex flex-col gap-3 md:flex-row md:items-center md:justify-between sticky top-0 z-10 bg-white">
-                        <div className="flex items-center gap-2">
-                            <label htmlFor="historyType" className="text-xs text-gray-500">Tipo</label>
-                            <select id="historyType" value={historyTypeFilter} onChange={(e) => { setHistoryTypeFilter(e.target.value as any); setHistoryPage(1); }} className="border px-2 py-1 rounded text-sm bg-white">
-                                <option value="ALL">Todos</option>
-                                <option value="SALE">Recebimentos</option>
-                                <option value="EXPENSE">Despesas</option>
-                            </select>
-
-                            <label htmlFor="historyStartDate" className="text-xs text-gray-500 ml-4">De</label>
-                            <input id="historyStartDate" type="date" value={historyStartDate || ''} onChange={(e) => { setHistoryStartDate(e.target.value || null); setHistoryPage(1); }} className="border px-2 py-1 rounded text-sm bg-white" />
-
-                            <label htmlFor="historyEndDate" className="text-xs text-gray-500 ml-2">Até</label>
-                            <input id="historyEndDate" type="date" value={historyEndDate || ''} onChange={(e) => { setHistoryEndDate(e.target.value || null); setHistoryPage(1); }} className="border px-2 py-1 rounded text-sm bg-white" />
-
-                            <label htmlFor="historySearch" className="text-xs text-gray-500 ml-4">Buscar</label>
-                            <input id="historySearch" placeholder="Buscar" value={historySearch} onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }} className="ml-4 border rounded px-2 py-1 text-sm bg-white" />
+                    {/* Filters */}
+                    <div className="p-4 border-b border-gray-100 flex flex-col gap-3 bg-white">
+                        {/* Location filter pills */}
+                        <div className="flex flex-wrap gap-2 items-center">
+                            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Setor:</span>
+                            <button
+                                onClick={() => { setHistoryLocationFilter('ALL'); setHistoryPage(1); }}
+                                className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${historyLocationFilter === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                            >Todos</button>
+                            {locations.map(loc => (
+                                <button key={loc.id}
+                                    onClick={() => { setHistoryLocationFilter(loc.id); setHistoryPage(1); }}
+                                    className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${historyLocationFilter === loc.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                >{loc.name}</button>
+                            ))}
                         </div>
 
-                        <div className="flex items-center gap-2">
-                            <button aria-label="Exportar transações para CSV" title="Exportar para CSV" onClick={() => { exportTransactionsToCSV(); }} className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded">Exportar CSV</button>
-                            <label htmlFor="historyPageSize" className="text-xs text-gray-500">Linhas por página:</label>
-                            <select id="historyPageSize" value={historyPageSize} onChange={(e) => { setHistoryPageSize(Number(e.target.value)); setHistoryPage(1); }} className="border px-2 py-1 rounded text-sm bg-white">
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                                <option value={50}>50</option>
-                            </select>
+                        {/* Type / date / search filters */}
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <label htmlFor="historyType" className="text-xs text-gray-500">Tipo</label>
+                                <select id="historyType" value={historyTypeFilter} onChange={(e) => { setHistoryTypeFilter(e.target.value as any); setHistoryPage(1); }} className="border px-2 py-1 rounded text-sm bg-white">
+                                    <option value="ALL">Todos</option>
+                                    <option value="SALE">Recebimentos</option>
+                                    <option value="EXPENSE">Despesas</option>
+                                </select>
+
+                                <label htmlFor="historyStartDate" className="text-xs text-gray-500 ml-2">De</label>
+                                <input id="historyStartDate" type="date" value={historyStartDate || ''} onChange={(e) => { setHistoryStartDate(e.target.value || null); setHistoryPage(1); }} className="border px-2 py-1 rounded text-sm bg-white" />
+
+                                <label htmlFor="historyEndDate" className="text-xs text-gray-500 ml-2">Até</label>
+                                <input id="historyEndDate" type="date" value={historyEndDate || ''} onChange={(e) => { setHistoryEndDate(e.target.value || null); setHistoryPage(1); }} className="border px-2 py-1 rounded text-sm bg-white" />
+
+                                <input id="historySearch" placeholder="Buscar..." value={historySearch} onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }} className="border rounded px-2 py-1 text-sm bg-white ml-2" />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button aria-label="Exportar para CSV" onClick={() => exportTransactionsToCSV()} className="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded border border-blue-100">Exportar CSV</button>
+                                <label htmlFor="historyPageSize" className="text-xs text-gray-500">Linhas:</label>
+                                <select id="historyPageSize" value={historyPageSize} onChange={(e) => { setHistoryPageSize(Number(e.target.value)); setHistoryPage(1); }} className="border px-2 py-1 rounded text-sm bg-white">
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4">
+                    {/* Pagination info */}
+                    {(() => {
+                        const filtered = applyHistoryFilters(transactions);
+                        const total = filtered.length;
+                        const start = (historyPage - 1) * historyPageSize;
+                        return (
+                            <div className="px-4 py-2 bg-gray-50 border-b flex items-center justify-between text-sm text-gray-600">
+                                <span>Mostrando {total === 0 ? 0 : start + 1}–{Math.min(start + historyPageSize, total)} de {total}</span>
+                                <div className="flex items-center gap-2">
+                                    <button disabled={historyPage === 1} onClick={() => setHistoryPage(historyPage - 1)} className="px-3 py-1 bg-gray-100 rounded text-sm disabled:opacity-50">Anterior</button>
+                                    <span>Pág. {historyPage}</span>
+                                    <button disabled={(historyPage * historyPageSize) >= total} onClick={() => setHistoryPage(historyPage + 1)} className="px-3 py-1 bg-gray-100 rounded text-sm disabled:opacity-50">Próxima</button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    <div className="flex-1 overflow-y-auto">
                         <table className="w-full text-left border-collapse">
                             <thead className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase sticky top-0">
                                 <tr>
                                     <th className="p-3 border-b">Data</th>
                                     <th className="p-3 border-b">Tipo</th>
+                                    <th className="p-3 border-b">Localização</th>
                                     <th className="p-3 border-b">Origem / Descrição</th>
                                     <th className="p-3 border-b text-right">Valor</th>
                                     <th className="p-3 border-b">Método</th>
@@ -704,57 +749,34 @@ export const POS = () => {
                             </thead>
                             <tbody className="divide-y divide-gray-100 text-sm">
                                 {(() => {
-                                    // Apply filters
-                                    const byLocation = transactions.filter(tx => !currentUser?.locationId || tx.locationId === currentUser.locationId);
-                                    const byType = byLocation.filter(tx => historyTypeFilter === 'ALL' ? true : tx.type === historyTypeFilter);
-                                    const byDate = byType.filter(tx => {
-                                        if (!historyStartDate && !historyEndDate) return true;
-                                        const d = tx.date ? tx.date.slice(0, 10) : '';
-                                        if (historyStartDate && d < historyStartDate) return false;
-                                        if (historyEndDate && d > historyEndDate) return false;
-                                        return true;
-                                    });
-                                    const bySearch = byDate.filter(tx => {
-                                        const q = historySearch.toLowerCase();
-                                        if (!q) return true;
-                                        return (tx.clientName || '').toLowerCase().includes(q) || (tx.description || '').toLowerCase().includes(q) || (tx.category || '').toLowerCase().includes(q);
-                                    });
-
-                                    const total = bySearch.length;
+                                    const filtered = applyHistoryFilters(transactions);
+                                    const total = filtered.length;
                                     const start = (historyPage - 1) * historyPageSize;
-                                    const pageItems = bySearch.slice(start, start + historyPageSize);
-
-                                    // Render rows
-                                    return pageItems.map(tx => (
-                                        <tr key={tx.id} className="hover:bg-slate-50">
-                                            <td className="p-3 text-xs text-gray-500">{formatFlexibleDate(tx.date, { time: true })}</td>
-                                            <td className="p-3 font-bold text-[12px]">{tx.type === 'SALE' ? 'Recebimento' : 'Despesa'}</td>
-                                            <td className="p-3 text-gray-700">{tx.clientName || tx.description || tx.category || '-'}</td>
-                                            <td className="p-3 text-right font-bold text-gray-800">{formatCurrency(tx.amount)}</td>
-                                            <td className="p-3 text-sm text-gray-600">{tx.paymentMethod}</td>
-                                        </tr>
-                                    ));
-                                })()}
-                                {(() => {
-                                    const total = transactions.filter(tx => !currentUser?.locationId || tx.locationId === currentUser.locationId)
-                                        .filter(tx => historyTypeFilter === 'ALL' ? true : tx.type === historyTypeFilter)
-                                        .filter(tx => {
-                                            if (!historyStartDate && !historyEndDate) return true;
-                                            const d = tx.date ? tx.date.slice(0, 10) : '';
-                                            if (historyStartDate && d < historyStartDate) return false;
-                                            if (historyEndDate && d > historyEndDate) return false;
-                                            return true;
-                                        })
-                                        .filter(tx => {
-                                            const q = historySearch.toLowerCase();
-                                            if (!q) return true;
-                                            return (tx.clientName || '').toLowerCase().includes(q) || (tx.description || '').toLowerCase().includes(q) || (tx.category || '').toLowerCase().includes(q);
-                                        }).length;
+                                    const pageItems = filtered.slice(start, start + historyPageSize);
 
                                     if (total === 0) {
-                                        return (<tr><td colSpan={5} className="p-8 text-center text-gray-400">Nenhuma transação encontrada.</td></tr>);
+                                        return <tr><td colSpan={6} className="p-8 text-center text-gray-400">Nenhuma transação encontrada.</td></tr>;
                                     }
-                                    return null;
+
+                                    return pageItems.map(tx => {
+                                        const loc = locations.find(l => l.id === tx.locationId);
+                                        return (
+                                            <tr key={tx.id} className={`hover:bg-slate-50 ${tx.type === 'EXPENSE' ? 'bg-red-50/20' : ''}`}>
+                                                <td className="p-3 text-xs text-gray-500 whitespace-nowrap">{formatFlexibleDate(tx.date, { time: true })}</td>
+                                                <td className="p-3">
+                                                    <span className={`font-bold text-[11px] px-2 py-0.5 rounded-full ${tx.type === 'SALE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                        {tx.type === 'SALE' ? 'Receita' : 'Despesa'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">
+                                                    {loc ? <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold">{loc.name}</span> : <span className="text-gray-400 text-xs">—</span>}
+                                                </td>
+                                                <td className="p-3 text-gray-700 max-w-xs truncate">{tx.clientName || tx.description || tx.category || '-'}</td>
+                                                <td className={`p-3 text-right font-bold ${tx.type === 'SALE' ? 'text-green-700' : 'text-red-600'}`}>{formatCurrency(tx.amount)}</td>
+                                                <td className="p-3 text-xs text-gray-600">{tx.paymentMethod}</td>
+                                            </tr>
+                                        );
+                                    });
                                 })()}
                             </tbody>
                         </table>
@@ -762,68 +784,162 @@ export const POS = () => {
                 </div>
             )}
             {activeTab === 'expenses' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20 md:pb-0">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                            <TrendingDown className="text-red-500" /> Registrar Despesa
-                        </h3>
+                <div className="space-y-6 pb-20 md:pb-0">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                            <h2 className="text-xl md:text-2xl font-black tracking-tight text-slate-900 leading-none">Gestão de Despesas</h2>
+                            <p className="text-sm text-slate-500 font-medium">Controle de gastos e compras da filial</p>
+                        </div>
+                        <button
+                            onClick={() => setIsExpenseModalOpen(true)}
+                            className="bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-red-200"
+                        >
+                            + Nova Despesa
+                        </button>
+                    </div>
+
+                    {/* Location filter for expenses */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Filtrar por localização:</span>
+                        <button
+                            onClick={() => setHistoryLocationFilter('ALL')}
+                            className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${historyLocationFilter === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                        >Todas</button>
+                        {locations.map(loc => (
+                            <button
+                                key={loc.id}
+                                onClick={() => setHistoryLocationFilter(loc.id)}
+                                className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${historyLocationFilter === loc.id ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                            >{loc.name}</button>
+                        ))}
+                    </div>
+
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                        <th className="p-4">Data</th>
+                                        <th className="p-4">Localização</th>
+                                        <th className="p-4">Descrição</th>
+                                        <th className="p-4">Categoria</th>
+                                        <th className="p-4">Nº Recibo</th>
+                                        <th className="p-4 text-right">Valor</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-sm">
+                                    {(() => {
+                                        const expenseTxs = transactions
+                                            .filter(t => t.type === TransactionType.EXPENSE)
+                                            .filter(t => historyLocationFilter === 'ALL' || t.locationId === historyLocationFilter);
+                                        if (expenseTxs.length === 0) {
+                                            return <tr><td colSpan={6} className="p-8 text-center text-slate-500 bg-slate-50/50">Nenhuma despesa registrada{historyLocationFilter !== 'ALL' ? ' para esta localização' : ''}.</td></tr>;
+                                        }
+                                        const totalExpenses = expenseTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+                                        return [
+                                            ...expenseTxs.slice(0, 50).map(tx => {
+                                                const loc = locations.find(l => l.id === tx.locationId);
+                                                return (
+                                                    <tr key={tx.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                                                        <td className="p-4 whitespace-nowrap text-slate-600">{formatFlexibleDate(tx.date || '')}</td>
+                                                        <td className="p-4">{loc ? <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">{loc.name}</span> : <span className="text-slate-400 text-xs">-</span>}</td>
+                                                        <td className="p-4 max-w-xs truncate text-slate-900 font-medium">{tx.description || '-'}</td>
+                                                        <td className="p-4"><span className="bg-orange-50 text-orange-600 px-2 py-0.5 rounded text-xs font-bold">{tx.category || '-'}</span></td>
+                                                        <td className="p-4 text-slate-500 font-medium">{(tx as any).receiptNumber || '-'}</td>
+                                                        <td className="p-4 text-right font-black text-red-600">
+                                                            {(tx.amount || 0).toLocaleString('pt-MZ', { style: 'currency', currency: 'MZN' })}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            }),
+                                            <tr key="total-row" className="bg-red-50 border-t-2 border-red-200">
+                                                <td colSpan={5} className="p-4 font-black text-red-700 uppercase tracking-wide text-xs">Total {historyLocationFilter !== 'ALL' ? `— ${locations.find(l => l.id === historyLocationFilter)?.name}` : 'Geral'}</td>
+                                                <td className="p-4 text-right font-black text-red-700">{totalExpenses.toLocaleString('pt-MZ', { style: 'currency', currency: 'MZN' })}</td>
+                                            </tr>
+                                        ];
+                                    })()}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Expense Modal */}
+            {isExpenseModalOpen && (
+                <div className="fixed inset-0 bg-black/60 flex items-end md:items-center justify-center z-50 p-0 md:p-4 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-lg rounded-t-2xl md:rounded-xl shadow-xl p-6 animate-in slide-in-from-bottom-10 md:zoom-in">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                <TrendingDown className="text-red-500" /> Nova Despesa
+                            </h3>
+                            <button onClick={() => setIsExpenseModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                                <X size={24} />
+                            </button>
+                        </div>
                         <form onSubmit={handleExpenseSubmit} className="space-y-4">
-                            <div>
-                                <label htmlFor="expenseDesc" className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-                                <input
-                                    id="expenseDesc"
-                                    required type="text"
-                                    className="w-full border rounded-lg p-3 bg-white text-gray-900"
-                                    value={expenseDesc}
-                                    onChange={e => setExpenseDesc(e.target.value)}
-                                    placeholder="Ex: Compra de material"
-                                />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                                    <input required type="date" className="w-full border rounded-lg p-3 bg-white text-gray-900"
+                                        value={expenseForm.date} onChange={e => setExpenseForm({ ...expenseForm, date: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nº Recibo / Doc</label>
+                                    <input type="text" className="w-full border rounded-lg p-3 bg-white text-gray-900"
+                                        value={expenseForm.receiptNumber} onChange={e => setExpenseForm({ ...expenseForm, receiptNumber: e.target.value })} placeholder="Opcional" />
+                                </div>
                             </div>
-                            {/* ... rest of form ... */}
                             <div>
-                                <label htmlFor="expenseCategory" className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-                                <select
-                                    id="expenseCategory"
-                                    className="w-full border rounded-lg p-3 bg-white text-gray-900"
-                                    value={expenseCategory}
-                                    onChange={e => setExpenseCategory(e.target.value)}
-                                >
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Localização / Centro de Custo</label>
+                                <select className="w-full border rounded-lg p-3 bg-white text-gray-900" required
+                                    value={expenseForm.costCenterId} onChange={e => setExpenseForm({ ...expenseForm, costCenterId: e.target.value })}>
                                     <option value="">Selecione...</option>
-                                    <option value="Combustível">Combustível</option>
-                                    <option value="Manutenção">Manutenção</option>
-                                    <option value="Alimentação">Alimentação</option>
-                                    <option value="Transporte">Transporte</option>
-                                    <option value="Outros">Outros</option>
+                                    {locations.length > 0 && (
+                                        <optgroup label="── Localizações Registradas">
+                                            {locations.map(loc => (
+                                                <option key={loc.id} value={loc.id}>{loc.name} ({loc.type})</option>
+                                            ))}
+                                        </optgroup>
+                                    )}
+                                    {costCenters?.length > 0 && (
+                                        <optgroup label="── Centros de Custo">
+                                            {costCenters.map(cc => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
+                                        </optgroup>
+                                    )}
                                 </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+                                <select className="w-full border rounded-lg p-3 bg-white text-gray-900" required
+                                    value={expenseForm.category} onChange={e => setExpenseForm({ ...expenseForm, category: e.target.value })}>
+                                    <option value="">Selecione...</option>
+                                    {expenseCategories?.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                                <input required type="text" className="w-full border rounded-lg p-3 bg-white text-gray-900"
+                                    value={expenseForm.description} onChange={e => setExpenseForm({ ...expenseForm, description: e.target.value })} placeholder="Ex: Compra de material" />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label htmlFor="expenseAmount" className="block text-sm font-medium text-gray-700 mb-1">Valor</label>
-                                    <input
-                                        id="expenseAmount"
-                                        required type="number" min="0" step="0.01"
-                                        className="w-full border rounded-lg p-3 bg-white text-gray-900"
-                                        value={expenseAmount}
-                                        onChange={e => setExpenseAmount(parseFloat(e.target.value))}
-                                    />
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor (MZN)</label>
+                                    <input required type="number" min="0" step="0.01" className="w-full border rounded-lg p-3 bg-white text-gray-900"
+                                        value={expenseForm.amount} onChange={e => setExpenseForm({ ...expenseForm, amount: parseFloat(e.target.value) })} />
                                 </div>
                                 <div>
-                                    <label htmlFor="expenseMethod" className="block text-sm font-medium text-gray-700 mb-1">Método</label>
-                                    <select
-                                        id="expenseMethod"
-                                        className="w-full border rounded-lg p-3 bg-white text-gray-900"
-                                        value={expenseMethod}
-                                        onChange={e => setExpenseMethod(e.target.value as PaymentMethod)}
-                                    >
-                                        <option value={PaymentMethod.CASH}>Dinheiro</option>
-                                        <option value={PaymentMethod.MOBILE_MONEY}>M-Pesa</option>
-                                        <option value={PaymentMethod.CARD}>Cartão</option>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Método de Pagamento</label>
+                                    <select className="w-full border rounded-lg p-3 bg-white text-gray-900"
+                                        value={expenseForm.paymentMethod} onChange={e => setExpenseForm({ ...expenseForm, paymentMethod: e.target.value as PaymentMethod })}>
+                                        {contextPaymentMethods?.map(pm => <option key={pm} value={pm}>{pm}</option>)}
                                     </select>
                                 </div>
                             </div>
-                            <button type="submit" className="w-full bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 mt-2 shadow-md">
-                                Lançar Despesa
-                            </button>
+                            <div className="flex gap-3 mt-6">
+                                <button type="button" onClick={() => setIsExpenseModalOpen(false)} className="flex-1 text-gray-700 bg-gray-100 py-3 font-bold rounded-xl hover:bg-gray-200">Cancelar</button>
+                                <button type="submit" className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 shadow-md">Gravar Despesa</button>
+                            </div>
                         </form>
                     </div>
                 </div>

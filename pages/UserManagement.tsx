@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Role } from '../types';
-import createUserWithEdge from '../services/userService';
+import createUserWithEdge, { CreateUserPayload } from '../services/userService';
 import { LOCATIONS } from '../constants';
 
 const UserManagement: React.FC = () => {
@@ -10,13 +10,13 @@ const UserManagement: React.FC = () => {
   const [role, setRole] = useState<Role>(Role.WORKER);
   const [locationId, setLocationId] = useState('');
   const [jobTitle, setJobTitle] = useState('');
-  const [status, setStatus] = useState<string | null>(null);
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus('Enviando...');
+    setStatus({ type: 'info', message: 'Enviando...' });
 
-    const payload = {
+    const payload: CreateUserPayload = {
       name,
       email,
       password,
@@ -26,17 +26,16 @@ const UserManagement: React.FC = () => {
     };
 
     try {
-      const res = await createUserWithEdge(payload as any);
+      const res = await createUserWithEdge(payload);
       if (!res.success) {
-        setStatus(`Erro: ${res.error}`);
-        console.error('create-user error', res);
+        setStatus({ type: 'error', message: `Erro: ${res.error}` });
       } else {
-        setStatus('Usuário criado com sucesso! ' + (res.data?.userId || ''));
+        setStatus({ type: 'success', message: 'Usuário criado com sucesso! ' + (res.data?.userId || '') });
         // clear form
         setName(''); setEmail(''); setPassword(''); setRole(Role.WORKER);
       }
     } catch (err: any) {
-      setStatus(`Exception: ${err?.message || String(err)}`);
+      setStatus({ type: 'error', message: `Exception: ${err?.message || String(err)}` });
     }
   };
 
@@ -84,7 +83,15 @@ const UserManagement: React.FC = () => {
       </form>
 
       {status && (
-        <div className="mt-4 p-3 border rounded bg-gray-50">{status}</div>
+        <div
+          className={`mt-4 p-3 border rounded ${
+            status.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' :
+            status.type === 'error' ? 'bg-red-100 border-red-400 text-red-800' :
+            'bg-gray-50'
+          }`}
+        >
+          {status.message}
+        </div>
       )}
     </div>
   );

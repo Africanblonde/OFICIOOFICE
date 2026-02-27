@@ -74,7 +74,7 @@ interface LogisticsContextType {
   getWorkersByLocation: (locationId: string) => User[];
   refreshData: () => void;
   registerNewItem: (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number, isForSale?: boolean) => void;
-  addToInventory: (itemId: string, locationId: string, qty: number, unitPrice: number) => void;
+  addToInventory: (itemId: string, locationId: string, qty: number, unitPrice: number, itemName?: string) => void;
   updateItem: (itemId: string, updates: Partial<Item>) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
   addUser: (user: { name: string; email: string; password?: string; role: Role; locationId?: string; jobTitle?: string; defaultDailyGoal?: number; dailyRate?: number; halfDayRate?: number; absencePenalty?: number; bonusPerUnit?: number; }) => Promise<void>;
@@ -94,7 +94,7 @@ interface LogisticsContextType {
   updateCompanyInfo: (info: CompanyInfo) => void;
   setDefaultCurrency: (currency: string) => void;
   processSale: (cart: CartItem[], clientName: string, clientNuit: string, paymentMethod: PaymentMethod, totalAmount: number) => void;
-  registerExpense: (description: string, category: string, amount: number, paymentMethod: PaymentMethod) => void;
+  registerExpense: (description: string, category: string, amount: number, paymentMethod: PaymentMethod, date?: string, costCenterId?: string | null, receiptNumber?: string, overrideLocationId?: string | null) => Promise<void>;
   hasPermission: (permission: AppPermission) => boolean;
   togglePermission: (role: Role, permission: AppPermission) => void;
 
@@ -115,7 +115,7 @@ interface LogisticsContextType {
   calculatePayrollForUser: (user: User) => PayrollRecord;
 
   // Ficha Individual Functions
-  createFicha: (ficha: Omit<FichaIndividual, 'id' | 'codigo' | 'created_at' | 'updated_at'>) => Promise<void>;
+  createFicha: (ficha: Omit<FichaIndividual, 'id' | 'codigo' | 'created_at' | 'updated_at'>, explicitLocationId?: string) => Promise<void>;
   confirmFicha: (fichaId: string) => Promise<void>;
   lockFicha: (fichaId: string) => Promise<void>;
   updateFicha: (ficha: FichaIndividual) => Promise<void>;
@@ -206,7 +206,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [payrollParams, setPayrollParams] = useState<Record<string, { advances: number }>>({});
 
   // Settings State - Keep some defaults for initial setup
-  const [categories, setCategories] = useState<string[]>(['Equipamento', 'EPI', 'Tecnologia', 'Ferramenta']);
+  const [categories, setCategories] = useState<string[]>(['Insumo', 'Combustível', 'Óleo', 'Peças', 'Ferramenta', 'EPI', 'Escritório', 'Limpeza', 'Tecnologia', 'TI', 'Outros']);
   const [measureUnits, setMeasureUnits] = useState<string[]>(['Unidade', 'Par', 'Litros', 'Kg', 'Metros']);
 
   // New: Item Types Management (Name -> Behavior)
@@ -250,307 +250,404 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   // Load current user from Supabase on mount
   // Load current user and all users from Supabase on mount
   useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let markOffline: (() => Promise<void>) | null = null;
+    let handleVisibility: (() => void) | null = null;
+    let actor: User | null = null;
+
     const loadData = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      let actor: User | null = null;
-      if (session?.user) {
-        console.log('👤 Sessão encontrada para usuário:', session.user.id, session.user.email);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          console.log('👤 Sessão encontrada para usuário:', session.user.id, session.user.email);
 
-        // Try to load user from database
-        const { data: userData, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
+          // Try to load user from database
+          const { data: userData, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
 
-        if (userData && !error) {
-          // Map snake_case from DB to camelCase
-          console.log('✅ Dados do usuário carregados do Supabase:', userData);
-          const mappedUser: User = {
-            id: userData.id,
-            name: userData.name,
-            role: userData.role,
-            locationId: userData.location_id || null,
-            jobTitle: userData.job_title,
-            defaultDailyGoal: userData.default_daily_goal,
-            dailyRate: userData.daily_rate,
-            halfDayRate: userData.half_day_rate,
-            absencePenalty: userData.absence_penalty,
-            bonusPerUnit: userData.bonus_per_unit
-          };
-          console.log('👤 Usuário mapeado para aplicação:', mappedUser);
-          console.log('🔐 Role do usuário (BD):', mappedUser.role);
-          actor = mappedUser;
-          setCurrentUser(mappedUser);
-        } else if (error) {
-          console.error('❌ Erro ao buscar usuário do BD:', error);
-          // Fallback for new users who haven't been saved to DB yet
-          const tempUser: User = {
-            id: session.user.id,
-            name: session.user.user_metadata?.name || session.user.email || 'User',
-            role: Role.WORKER,
-            locationId: null,
-          };
-          console.warn('⚠️ Usando fallback (WORKER) pois usuário não existe no BD ainda');
-          actor = tempUser;
-          setCurrentUser(tempUser);
+          if (userData && !error) {
+            // Map snake_case from DB to camelCase
+            console.log('✅ Dados do usuário carregados do Supabase:', userData);
+            const mappedUser: User = {
+              id: userData.id,
+              name: userData.name,
+              role: userData.role,
+              locationId: userData.location_id || null,
+              jobTitle: userData.job_title,
+              defaultDailyGoal: userData.default_daily_goal,
+              dailyRate: userData.daily_rate,
+              halfDayRate: userData.half_day_rate,
+              absencePenalty: userData.absence_penalty,
+              bonusPerUnit: userData.bonus_per_unit
+            };
+            console.log('👤 Usuário mapeado para aplicação:', mappedUser);
+            console.log('🔐 Role do usuário (BD):', mappedUser.role);
+            actor = mappedUser;
+            setCurrentUser(mappedUser);
+          } else if (error) {
+            console.error('❌ Erro ao buscar usuário do BD:', error);
+            // Fallback for new users who haven't been saved to DB yet
+            const tempUser: User = {
+              id: session.user.id,
+              name: session.user.user_metadata?.name || session.user.email || 'User',
+              role: Role.WORKER,
+              locationId: null,
+            };
+            console.warn('⚠️ Usando fallback (WORKER) pois usuário não existe no BD ainda');
+            actor = tempUser;
+            setCurrentUser(tempUser);
+          } else {
+            console.error('❌ userData vazio mas sem erro (situação estranha)');
+            const tempUser: User = {
+              id: session.user.id,
+              name: session.user.user_metadata?.name || session.user.email || 'User',
+              role: Role.WORKER,
+              locationId: null,
+            };
+            actor = tempUser;
+            setCurrentUser(tempUser);
+          }
         } else {
-          console.error('❌ userData vazio mas sem erro (situação estranha)');
-          const tempUser: User = {
-            id: session.user.id,
-            name: session.user.user_metadata?.name || session.user.email || 'User',
-            role: Role.WORKER,
-            locationId: null,
-          };
-          actor = tempUser;
-          setCurrentUser(tempUser);
+          console.warn('⚠️ Nenhuma sessão disponível');
         }
-      } else {
-        console.warn('⚠️ Nenhuma sessão disponível');
-      }
 
-      // Fetch all users only when the signed-in actor is an Admin or General Manager.
-      // For normal users, expose only their own profile in allUsers so they can't access others' data.
-      // Use a local actor variable because setCurrentUser() is async and won't update `currentUser` immediately.
-      // actor is set above when we loaded or created the current user
+        // Fetch all users only when the signed-in actor is an Admin or General Manager.
+        // For normal users, expose only their own profile in allUsers so they can't access others' data.
+        // Use a local actor variable because setCurrentUser() is async and won't update `currentUser` immediately.
+        // actor is set above when we loaded or created the current user
 
-      if (actor && (actor.role === Role.ADMIN || actor.role === Role.GENERAL_MANAGER)) {
-        const { data: usersData } = await supabase.from('users').select('*');
-        if (usersData) {
+        if (actor && (actor.role === Role.ADMIN || actor.role === Role.GENERAL_MANAGER)) {
+          const { data: usersData } = await supabase.from('users').select('*');
+          if (usersData) {
+            // Map snake_case from DB to camelCase for the app
+            const mappedUsers = usersData.map(user => ({
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              locationId: user.location_id || null,
+              jobTitle: user.job_title,
+              defaultDailyGoal: user.default_daily_goal,
+              dailyRate: user.daily_rate,
+              halfDayRate: user.half_day_rate,
+              absencePenalty: user.absence_penalty,
+              bonusPerUnit: user.bonus_per_unit
+            }));
+            setAllUsers(mappedUsers);
+          }
+        } else if (actor) {
+          // Only expose the actor's own profile for non-admin users
+          setAllUsers([actor]);
+        }
+
+        // Update presence for current actor: mark online and set lastSeen
+        try {
+          if (actor) {
+            const now = new Date().toISOString();
+            const { error } = await supabase
+              .from('users')
+              .update({ is_online: true, last_seen: now })
+              .eq('id', actor.id)
+              .select()
+              .single();
+
+            if (error) {
+              console.error('Error updating user presence:', error.code, error.message);
+            }
+          }
+        } catch (e) {
+          console.error('Could not update presence for user', e);
+        }
+
+        // Subscribe to users table updates to reflect presence/last-seen in realtime
+        channel = supabase.channel('public:users')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, (payload) => {
+            const usr: any = payload.new;
+            if (!usr) return;
+            setAllUsers(prev => {
+              const idx = prev.findIndex(u => u.id === usr.id);
+              const mapped = {
+                id: usr.id,
+                name: usr.name,
+                email: usr.email,
+                role: usr.role,
+                locationId: usr.location_id || null,
+                jobTitle: usr.job_title,
+                defaultDailyGoal: usr.default_daily_goal,
+                dailyRate: usr.daily_rate,
+                halfDayRate: usr.half_day_rate,
+                absencePenalty: usr.absence_penalty,
+                bonusPerUnit: usr.bonus_per_unit,
+                isOnline: usr.is_online,
+                lastSeen: usr.last_seen
+              } as any;
+              if (idx === -1) return [...prev, mapped];
+              const copy = [...prev]; copy[idx] = { ...copy[idx], ...mapped }; return copy;
+            });
+          })
+          .subscribe();
+
+        // On unload/visibility change mark user offline with lastSeen
+        markOffline = async () => {
+          try {
+            if (actor) {
+              const now = new Date().toISOString();
+              const { error } = await supabase
+                .from('users')
+                .update({ is_online: false, last_seen: now })
+                .eq('id', actor.id)
+                .select()
+                .single();
+
+              if (error) {
+                console.error('Error marking user offline:', error.code, error.message);
+              }
+            }
+          } catch (e) {
+            console.error('Could not mark user offline', e);
+          }
+        };
+
+        handleVisibility = () => {
+          if (document.visibilityState === 'hidden') markOffline?.();
+          else if (document.visibilityState === 'visible' && actor) {
+            supabase
+              .from('users')
+              .update({ is_online: true, last_seen: new Date().toISOString() })
+              .eq('id', actor.id)
+              .select()
+              .single()
+              .then(({ error }) => {
+                if (error) {
+                  console.error('Error updating visibility:', error.code, error.message);
+                }
+              });
+          }
+        };
+
+        window.addEventListener('beforeunload', markOffline);
+        document.addEventListener('visibilitychange', handleVisibility);
+
+        // Fetch locations
+        const { data: locationsData } = await supabase.from('locations').select('*');
+        if (locationsData) {
           // Map snake_case from DB to camelCase for the app
-          const mappedUsers = usersData.map(user => ({
-            id: user.id,
-            name: user.name,
-            role: user.role,
-            locationId: user.location_id || null,
-            jobTitle: user.job_title,
-            defaultDailyGoal: user.default_daily_goal,
-            dailyRate: user.daily_rate,
-            halfDayRate: user.half_day_rate,
-            absencePenalty: user.absence_penalty,
-            bonusPerUnit: user.bonus_per_unit
+          const mappedLocations = (locationsData || []).map(loc => ({
+            id: loc.id,
+            name: loc.name,
+            type: loc.type,
+            parentId: loc.parent_id
           }));
-          setAllUsers(mappedUsers);
+          setLocations(mappedLocations || []);
         }
-      } else if (actor) {
-        // Only expose the actor's own profile for non-admin users
-        setAllUsers([actor]);
-      }
 
-      // Fetch locations
-      const { data: locationsData } = await supabase.from('locations').select('*');
-      if (locationsData) {
-        // Map snake_case from DB to camelCase for the app
-        const mappedLocations = locationsData.map(loc => ({
-          id: loc.id,
-          name: loc.name,
-          type: loc.type,
-          parentId: loc.parent_id
-        }));
-        setLocations(mappedLocations);
-      }
+        // Fetch item categories
+        const { data: catData } = await supabase.from('item_categories').select('name').order('name');
+        if (catData && catData.length > 0) {
+          setCategories(catData.map(c => c.name));
+        }
 
-      // Fetch items
-      const { data: itemsData } = await supabase.from('items').select('*');
-      if (itemsData) {
-        setItems(itemsData);
-      }
+        // Fetch items
+        const { data: itemsData } = await supabase.from('items').select('*');
+        setItems(itemsData || []);
 
-      // Fetch inventory
-      const { data: inventoryData } = await supabase.from('inventory').select('*');
-      if (inventoryData) {
-        // Map snake_case from DB to camelCase for the app
-        const mappedInventory = inventoryData.map(inv => ({
-          itemId: inv.item_id,
-          locationId: inv.location_id,
-          quantity: inv.quantity
-        }));
-        setInventory(mappedInventory);
-      }
+        // Fetch inventory
+        const { data: inventoryData } = await supabase.from('inventory').select('*');
+        if (inventoryData) {
+          // Map snake_case from DB to camelCase for the app
+          const mappedInventory = (inventoryData || []).map(inv => ({
+            itemId: inv.item_id,
+            locationId: inv.location_id,
+            quantity: inv.quantity
+          }));
+          setInventory(mappedInventory || []);
+        }
 
-      // Fetch requisitions with logs
-      const { data: requisitionsData } = await supabase
-        .from('requisitions')
-        .select(`
+        // Fetch requisitions with logs
+        const { data: requisitionsData } = await supabase
+          .from('requisitions')
+          .select(`
           *,
           logs:requisition_logs(*)
         `)
-        .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false });
 
-      if (requisitionsData) {
-        const mappedRequisitions = requisitionsData.map(req => ({
-          id: req.id,
-          requesterId: req.requester_id,
-          sourceLocationId: req.source_location_id,
-          targetLocationId: req.target_location_id,
-          itemId: req.item_id,
-          quantity: req.quantity,
-          status: req.status,
-          condition: req.condition,
-          createdAt: req.created_at,
-          updatedAt: req.updated_at,
-          logs: req.logs || []
-        }));
-        setRequisitions(mappedRequisitions);
-      }
+        if (requisitionsData) {
+          const mappedRequisitions = (requisitionsData || []).map(req => ({
+            id: req.id,
+            requesterId: req.requester_id,
+            sourceLocationId: req.source_location_id,
+            targetLocationId: req.target_location_id,
+            itemId: req.item_id,
+            quantity: req.quantity,
+            status: req.status,
+            condition: req.condition,
+            createdAt: req.created_at,
+            updatedAt: req.updated_at,
+            logs: req.logs || []
+          }));
+          setRequisitions(mappedRequisitions || []);
+        }
 
-      // Fetch Requisition Sheets (New System)
-      const { data: sheetsData } = await supabase
-        .from('requisition_sheets')
-        .select(`
+        // Fetch Requisition Sheets (New System)
+        const { data: sheetsData } = await supabase
+          .from('requisition_sheets')
+          .select(`
           *,
           items:requisition_sheet_items(*)
         `)
-        .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false });
 
-      if (sheetsData) {
-        const mappedSheets: RequisitionSheet[] = sheetsData.map(sheet => ({
-          id: sheet.id,
-          requisitionNumber: sheet.requisition_number,
-          requesterId: sheet.requester_id,
-          sourceLocationId: sheet.source_location_id,
-          sourceLocationName: sheet.source_location_name,
-          targetLocationId: sheet.target_location_id,
-          targetLocationName: sheet.target_location_name,
-          status: sheet.status,
-          notes: sheet.notes,
-          createdAt: sheet.created_at,
-          updatedAt: sheet.updated_at,
-          items: (sheet.items || []).map((it: any) => ({
-            id: it.id,
-            sheetId: it.sheet_id,
-            itemId: it.item_id,
-            itemName: it.item_name,
-            quantity: it.quantity,
-            unit: it.unit,
-            condition: it.condition,
-            isDelivered: it.is_delivered,
-            notes: it.notes
-          }))
-        }));
-        setRequisitionSheets(mappedSheets);
-      }
+        if (sheetsData) {
+          const mappedSheets: RequisitionSheet[] = (sheetsData || []).map(sheet => ({
+            id: sheet.id,
+            requisitionNumber: sheet.requisition_number,
+            requesterId: sheet.requester_id,
+            sourceLocationId: sheet.source_location_id,
+            sourceLocationName: sheet.source_location_name,
+            targetLocationId: sheet.target_location_id,
+            targetLocationName: sheet.target_location_name,
+            status: sheet.status,
+            notes: sheet.notes,
+            createdAt: sheet.created_at,
+            updatedAt: sheet.updated_at,
+            items: (sheet.items || []).map((it: any) => ({
+              id: it.id,
+              sheetId: it.sheet_id,
+              itemId: it.item_id,
+              itemName: it.item_name,
+              quantity: it.quantity,
+              unit: it.unit,
+              condition: it.condition,
+              isDelivered: it.is_delivered,
+              notes: it.notes
+            }))
+          }));
+          setRequisitionSheets(mappedSheets || []);
+        }
 
-      // Fetch daily performance
-      const { data: performanceData } = await supabase
-        .from('daily_performance')
-        .select('*')
-        .order('date', { ascending: false });
-      if (performanceData) {
-        // Map snake_case from DB to camelCase
-        const mappedPerformance = performanceData.map(perf => ({
-          id: perf.id,
-          workerId: perf.worker_id,
-          date: perf.date,
-          status: perf.status,
-          production: perf.production,
-          notes: perf.notes
-        }));
-        setPerformanceRecords(mappedPerformance);
-      }
+        // Fetch daily performance
+        const { data: performanceData } = await supabase
+          .from('daily_performance')
+          .select('*')
+          .order('date', { ascending: false });
+        if (performanceData) {
+          // Map snake_case from DB to camelCase
+          const mappedPerformance = (performanceData || []).map(perf => ({
+            id: perf.id,
+            workerId: perf.worker_id,
+            date: perf.date,
+            status: perf.status,
+            production: perf.production,
+            notes: perf.notes
+          }));
+          setPerformanceRecords(mappedPerformance || []);
+        }
 
-      // Fetch transactions with items
-      const { data: transactionsData } = await supabase
-        .from('transactions')
-        .select(`
+        // Fetch transactions with items
+        const { data: transactionsData } = await supabase
+          .from('transactions')
+          .select(`
           *,
           items:transaction_items(*)
         `)
-        .order('date', { ascending: false });
+          .order('date', { ascending: false });
 
-      if (transactionsData) {
-        const mappedTransactions = transactionsData.map(txn => ({
-          id: txn.id,
-          type: txn.type,
-          date: txn.date,
-          userId: txn.user_id,
-          locationId: txn.location_id,
-          clientName: txn.client_name,
-          clientNuit: txn.client_nuit,
-          description: txn.description,
-          category: txn.category,
-          amount: txn.amount,
-          paymentMethod: txn.payment_method,
-          items: txn.items?.map((item: any) => ({
-            itemId: item.item_id,
-            name: item.name,
-            quantity: item.quantity,
-            unitPrice: item.unit_price
-          })) || []
-        }));
-        setTransactions(mappedTransactions);
-      }
+        if (transactionsData) {
+          const mappedTransactions = (transactionsData || []).map(txn => ({
+            id: txn.id,
+            type: txn.type,
+            date: txn.date,
+            userId: txn.user_id,
+            locationId: txn.location_id,
+            clientName: txn.client_name,
+            clientNuit: txn.client_nuit,
+            description: txn.description,
+            category: txn.category,
+            amount: txn.amount,
+            paymentMethod: txn.payment_method,
+            items: txn.items?.map((item: any) => ({
+              itemId: item.item_id,
+              name: item.name,
+              quantity: item.quantity,
+              unitPrice: item.unit_price
+            })) || []
+          }));
+          setTransactions(mappedTransactions || []);
+        }
 
-      // Fetch clients
-      const { data: clientsData } = await supabase.from('clients').select('*');
-      if (clientsData) {
-        setClients(clientsData);
-      }
+        // Fetch clients
+        const { data: clientsData } = await supabase.from('clients').select('*');
+        setClients(clientsData || []);
 
-      // Fetch invoices with items and payments
-      const { data: invoicesData } = await supabase
-        .from('invoices')
-        .select(`
+        // Fetch invoices with items and payments
+        const { data: invoicesData } = await supabase
+          .from('invoices')
+          .select(`
           *,
           itens:invoice_items(*),
           pagamentos:invoice_payments(*)
         `)
-        .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false });
 
-      if (invoicesData) {
-        setInvoices(invoicesData.map(inv => ({
-          id: inv.id,
-          numero: inv.numero,
-          tipo: inv.tipo,
-          status: inv.status,
-          locationId: inv.location_id,
-          empresa: {
-            nome: inv.company_name,
-            nuit: inv.company_nuit,
-            endereco: inv.company_address,
-            contacto: inv.company_contact
-          },
-          cliente: {
-            id: inv.client_id,
-            nome: inv.client_name,
-            nuit: inv.client_nuit,
-            endereco: inv.client_address,
-            contacto: inv.client_contact
-          },
-          itens: (inv.itens || []).map((it: any) => ({
-            itemId: it.item_id,
-            descricao: it.description,
-            quantidade: it.quantity,
-            precoUnitario: it.unit_price,
-            impostoPercent: it.tax_percent
-          })),
-          pagamentos: (inv.pagamentos || []).map((p: any) => ({ data: p.date, valor: p.amount, modalidade: p.method, referencia: p.reference })),
-          moeda: inv.currency,
-          dataEmissao: inv.issue_date,
-          vencimento: inv.due_date,
-          observacoes: inv.notes,
-          createdBy: inv.created_by
-        })));
+        if (invoicesData) {
+          setInvoices((invoicesData || []).map(inv => ({
+            id: inv.id,
+            numero: inv.numero,
+            tipo: inv.tipo,
+            status: inv.status,
+            locationId: inv.location_id,
+            empresa: {
+              nome: inv.company_name,
+              nuit: inv.company_nuit,
+              endereco: inv.company_address,
+              contacto: inv.company_contact
+            },
+            cliente: {
+              id: inv.client_id,
+              nome: inv.client_name,
+              nuit: inv.client_nuit,
+              endereco: inv.client_address,
+              contacto: inv.client_contact
+            },
+            itens: (inv.itens || []).map((it: any) => ({
+              itemId: it.item_id,
+              descricao: it.description,
+              quantidade: it.quantity,
+              precoUnitario: it.unit_price,
+              impostoPercent: it.tax_percent
+            })),
+            pagamentos: (inv.pagamentos || []).map((p: any) => ({ data: p.date, valor: p.amount, modalidade: p.method, referencia: p.reference })),
+            moeda: inv.currency,
+            dataEmissao: inv.issue_date,
+            vencimento: inv.due_date,
+            observacoes: inv.notes,
+            createdBy: inv.created_by
+          })));
+        }
+
+        setIsLoadingUser(false);
+      } catch (err) {
+        console.error('❌ Erro crítico ao carregar dados do usuário:', err);
+        // Mesmo em erro, marcar como carregado para não ficar travado na loading screen
+        setIsLoadingUser(false);
       }
-
-      setIsLoadingUser(false);
     };
 
     loadData();
+
+    // Return cleanup function to the useEffect
+    return () => {
+      if (markOffline) window.removeEventListener('beforeunload', markOffline);
+      if (handleVisibility) document.removeEventListener('visibilitychange', handleVisibility);
+      if (channel) {
+        try { channel.unsubscribe(); } catch (e) { /* ignore */ }
+      }
+    };
   }, []);
-
-  // Force refresh of current user data after initial load to ensure we have latest role
-  useEffect(() => {
-    if (!isLoadingUser && currentUser) {
-      // Wait a moment for data to settle, then refresh
-      const timeoutId = setTimeout(() => {
-        console.log('🔄 Forçando atualização do perfil do usuário após carregamento inicial...');
-        refreshData();
-      }, 500);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [isLoadingUser]);
 
   // 20 Minutes Interval
   const REFRESH_INTERVAL = 20 * 60 * 1000;
@@ -661,6 +758,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
               id: user.id,
               name: user.name,
               role: user.role,
+              email: user.email,
               locationId: user.location_id || null,
               jobTitle: user.job_title,
               defaultDailyGoal: user.default_daily_goal,
@@ -723,12 +821,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
             data: f.data,
             produto_id: f.produto_id,
             produto: f.produto_name || f.produto,
-            quantidade: f.quantidade,
+            quantidade: f.quantity_delivered || f.quantidade || 0,
             unidade: f.unidade,
             stock_antes: f.stock_antes,
             stock_depois: f.stock_depois,
             observacoes: f.observacoes,
-            usuario_registou: f.usuario_registou,
+            usuario_registou: f.delivered_by || f.usuario_registou,
             estado: f.estado,
             created_at: f.created_at,
             updated_at: f.updated_at
@@ -748,6 +846,20 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           const { data: logsData } = await supabase.from('audit_log').select('*').order('timestamp', { ascending: false });
           if (logsData) setAuditLogs(logsData);
         }
+
+        // --- ADDED: Fetch locations and items to ensure everything is fresh ---
+        const { data: locsData } = await supabase.from('locations').select('*');
+        if (locsData) {
+          setLocations(locsData.map(l => ({
+            id: l.id,
+            name: l.name,
+            type: l.type,
+            parentId: l.parent_id
+          })));
+        }
+        const { data: itsData } = await supabase.from('items').select('*');
+        if (itsData) setItems(itsData);
+        // -----------------------------------------------------------------------
 
       } else if (error) {
         // Handle 406 and other specific errors
@@ -1086,9 +1198,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     // --- SECURITY CHECK END ---
 
     // Update requisition status in Supabase
-    const { error: reqError } = await supabase.from('requisitions').update({
-      status: newStatus
-    }).eq('id', reqId);
+    const { error: reqError } = await supabase
+      .from('requisitions')
+      .update({ status: newStatus })
+      .eq('id', reqId)
+      .select()
+      .single();
 
     if (reqError) {
       showNotification(`Erro ao atualizar requisição: ${reqError.message}`);
@@ -1131,9 +1246,17 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     if (existingRecord) {
       const newQuantity = Math.max(0, existingRecord.quantity + change);
 
-      await supabase.from('inventory').update({
-        quantity: newQuantity
-      }).match({ item_id: itemId, location_id: locationId });
+      const { error } = await supabase
+        .from('inventory')
+        .update({ quantity: newQuantity })
+        .match({ item_id: itemId, location_id: locationId })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating inventory:', error.code, error.message);
+        return;
+      }
 
       setInventory(prev => prev.map(r =>
         (r.itemId === itemId && r.locationId === locationId)
@@ -1148,12 +1271,16 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       }).select().single();
 
       if (data) {
-        setInventory(prev => [...prev, data]);
+        setInventory(prev => [...prev, {
+          itemId: data.item_id,
+          locationId: data.location_id,
+          quantity: data.quantity
+        }]);
       }
     }
   };
 
-  const addToInventory = async (itemId: string, locationId: string, qty: number, unitPrice: number) => {
+  const addToInventory = async (itemId: string, locationId: string, qty: number, unitPrice: number, itemName?: string) => {
     if (!currentUser) return;
     // Validate locationId is provided and well-formed UUID
     if (!locationId || !isValidUuid(locationId)) {
@@ -1168,14 +1295,14 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // Update local inventory immediately for better UX
     setInventory(prev => {
-        const existingIdx = prev.findIndex(r => r.itemId === itemId && r.locationId === locationId);
-        if (existingIdx >= 0) {
-            const updated = [...prev];
-            updated[existingIdx] = { ...updated[existingIdx], quantity: updated[existingIdx].quantity + qty };
-            return updated;
-        }
-        // If it doesn't exist, we rely on the DB update which will trigger a refresh or we add a temp record
-        return [...prev, { id: `temp-${Date.now()}`, itemId, locationId, quantity: qty }];
+      const existingIdx = prev.findIndex(r => r.itemId === itemId && r.locationId === locationId);
+      if (existingIdx >= 0) {
+        const updated = [...prev];
+        updated[existingIdx] = { ...updated[existingIdx], quantity: updated[existingIdx].quantity + qty };
+        return updated;
+      }
+      // If it doesn't exist, we rely on the DB update which will trigger a refresh or we add a temp record
+      return [...prev, { id: `temp-${Date.now()}`, itemId, locationId, quantity: qty }];
     });
 
     await updateInventory(itemId, locationId, qty);
@@ -1200,28 +1327,28 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // 2. NEW: Record Financial Expense (Purchase)
     try {
-      const description = `Compra de estoque: ${qty}x ${item?.name || 'Item Desconhecido'}`;
-      await supabase.from('transactions').insert({
-        type: TransactionType.EXPENSE,
-        user_id: currentUser.id,
-        location_id: locationId,
-        description: description,
-        category: 'Compra de Estoque',
-        amount: qty * unitPrice,
-        payment_method: PaymentMethod.CASH, // Default to cash for direct stock additions
-        date: new Date().toISOString()
-      });
-      // Refresh transactions to reflect new expense
-      const { data: transactionsData } = await supabase
-        .from('transactions')
-        .select(`*, items:transaction_items(*)`)
-        .order('date', { ascending: false });
-      if (transactionsData) setTransactions(transactionsData.map(mapDbTransactionToApp));
+      const nameToUse = itemName || item?.name || 'Item';
+      const description = `Compra de estoque: ${qty}x ${nameToUse} (${item?.unit || 'Unidade'})`;
+      const totalValue = qty * unitPrice;
+
+      if (totalValue > 0) {
+        // Pass the stock location so the expense is attributed to the correct sector
+        await registerExpense(
+          description,
+          'Compra de Estoque',
+          totalValue,
+          PaymentMethod.CASH,
+          new Date().toISOString(),
+          null,          // costCenterId: none specific
+          undefined,    // receiptNumber
+          locationId    // overrideLocationId: use the stock location
+        );
+      }
     } catch (txnError) {
       console.error('Erro ao registrar despesa de estoque:', txnError);
     }
 
-    showNotification(`Estoque adicionado: ${qty}x ${item?.name}`);
+    showNotification(`Estoque adicionado: ${qty}x ${itemName || item?.name || 'Item'}`);
   };
 
   const updateItem = async (itemId: string, updates: Partial<Item>) => {
@@ -1275,7 +1402,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     setItems(prev => [...prev, newItem]);
 
     if (initialQty > 0) {
-      await addToInventory(newItem.id, locationId, initialQty, unitPrice);
+      await addToInventory(newItem.id, locationId, initialQty, unitPrice, name);
     } else {
       showNotification("Item cadastrado com sucesso.");
     }
@@ -1323,8 +1450,8 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     const sheet = requisitionSheets.find(s => s.id === sheetId);
     if (!sheet) {
-        showNotification(`Erro: Ficha de requisição ${sheetId} não encontrada.`);
-        return;
+      showNotification(`Erro: Ficha de requisição ${sheetId} não encontrada.`);
+      return;
     }
 
     const { error } = await supabase
@@ -1339,19 +1466,19 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     // Update inventory if needed
     if (newStatus === RequestStatus.APPROVED) {
-        for (const item of sheet.items) {
-            if (item.itemId) { // Only for existing items with an ID
-                await updateInventory(item.itemId, sheet.sourceLocationId, -item.quantity);
-            }
+      for (const item of sheet.items) {
+        if (item.itemId) { // Only for existing items with an ID
+          await updateInventory(item.itemId, sheet.sourceLocationId, -item.quantity);
         }
+      }
     }
 
     if (newStatus === RequestStatus.CONFIRMED) {
-        for (const item of sheet.items) {
-            if (item.itemId) { // Only for existing items with an ID
-                await updateInventory(item.itemId, sheet.targetLocationId, item.quantity);
-            }
+      for (const item of sheet.items) {
+        if (item.itemId) { // Only for existing items with an ID
+          await updateInventory(item.itemId, sheet.targetLocationId, item.quantity);
         }
+      }
     }
 
     // Local state update (optimistic or wait for reload)
@@ -1450,17 +1577,23 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   const updateUser = async (updatedUser: User) => {
     try {
       // 1. Update in Supabase
-      const { error } = await supabase.from('users').update({
-        name: updatedUser.name,
-        role: updatedUser.role,
-        location_id: updatedUser.locationId,
-        job_title: updatedUser.jobTitle,
-        default_daily_goal: updatedUser.defaultDailyGoal,
-        daily_rate: updatedUser.dailyRate,
-        half_day_rate: updatedUser.halfDayRate,
-        absence_penalty: updatedUser.absencePenalty,
-        bonus_per_unit: updatedUser.bonusPerUnit
-      }).eq('id', updatedUser.id);
+      const { error } = await supabase
+        .from('users')
+        .update({
+          name: updatedUser.name,
+          role: updatedUser.role,
+          email: updatedUser.email,
+          location_id: updatedUser.locationId,
+          job_title: updatedUser.jobTitle,
+          default_daily_goal: updatedUser.defaultDailyGoal,
+          daily_rate: updatedUser.dailyRate,
+          half_day_rate: updatedUser.halfDayRate,
+          absence_penalty: updatedUser.absencePenalty,
+          bonus_per_unit: updatedUser.bonusPerUnit
+        })
+        .eq('id', updatedUser.id)
+        .select()
+        .single();
 
       if (error) {
         throw error;
@@ -1574,7 +1707,14 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     showNotification("Localização removida com sucesso.");
   };
 
-  const addCategory = (cat: string) => setCategories([...categories, cat]);
+  const addCategory = async (cat: string) => {
+    const { error } = await supabase.from('item_categories').insert({ name: cat });
+    if (error) {
+      showNotification(`Erro ao adicionar categoria: ${error.message}`);
+      return;
+    }
+    setCategories([...categories, cat]);
+  };
   const addMeasureUnit = (unit: string) => setMeasureUnits([...measureUnits, unit]);
   const addItemType = (name: string, behavior: ItemType) => {
     const newType: ItemTypeDefinition = {
@@ -1740,11 +1880,25 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     showNotification("Venda realizada com sucesso!");
   };
 
-  const registerExpense = async (description: string, category: string, amount: number, paymentMethod: PaymentMethod) => {
+  const registerExpense = async (description: string, category: string, amount: number, paymentMethod: PaymentMethod, date?: string, costCenterIdParam?: string | null, receiptNumber?: string, overrideLocationId?: string | null) => {
     if (!currentUser) {
       showNotification("Usuário não autenticado");
       return;
     }
+
+    // Get a default cost center if none exists
+    let costCenterId = costCenterIdParam;
+    if (!costCenterId) {
+      if (costCenters.length > 0) {
+        costCenterId = costCenters[0].id;
+      } else {
+        const { data: ccData } = await supabase.from('cost_centers').select('id').eq('is_active', true).limit(1);
+        if (ccData && ccData.length > 0) costCenterId = ccData[0].id;
+      }
+    }
+
+    // Determine the location for this expense: prefer override, then the costCenterId if it's a location UUID, then user's own location
+    const effectiveLocationId = overrideLocationId ?? currentUser.locationId;
 
     const expenseData: any = {
       type: TransactionType.EXPENSE,
@@ -1752,7 +1906,10 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       description,
       category,
       amount,
-      payment_method: paymentMethod
+      payment_method: paymentMethod,
+      cost_center_id: costCenterId,
+      date: date || new Date().toISOString(),
+      receipt_number: receiptNumber
     };
 
     if (!isValidUuid(currentUser.id)) {
@@ -1760,13 +1917,13 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
-    // Only include location_id if it's not null
-    if (currentUser.locationId) {
-      if (!isValidUuid(currentUser.locationId)) {
-        showNotification('Erro: Localização do usuário inválida. Contate o administrador.');
+    // Include location_id (prefer override, fallback to user's location)
+    if (effectiveLocationId) {
+      if (!isValidUuid(effectiveLocationId)) {
+        showNotification('Erro: Localização inválida. Contate o administrador.');
         return;
       }
-      expenseData.location_id = currentUser.locationId;
+      expenseData.location_id = effectiveLocationId;
     }
 
     const { data, error } = await supabase.from('transactions').insert(expenseData).select().single();
@@ -2395,7 +2552,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       if (!result.success) {
         console.error('❌ Edge Function error:', result);
-        const msg = result.error || `Erro ao criar usuário (status ${result.status || 'unknown'})`;
+        const msg = result.error || 'Erro ao criar usuário';
         showNotification(`❌ Erro: ${msg}`);
         throw new Error(msg);
       }
@@ -2413,6 +2570,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           id: u.id,
           name: u.name,
           role: u.role,
+          email: u.email,
           locationId: u.location_id || null,
           jobTitle: u.job_title,
           defaultDailyGoal: u.default_daily_goal,
@@ -2434,12 +2592,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   // Ficha Individual Functions
-  const createFicha = async (ficha: Omit<FichaIndividual, 'id' | 'codigo' | 'created_at' | 'updated_at'>) => {
+  const createFicha = async (ficha: Omit<FichaIndividual, 'id' | 'codigo' | 'created_at' | 'updated_at'>, explicitLocationId?: string) => {
     if (!currentUser) return;
     try {
       // 1. Obter localização da entidade/pessoa se disponível, ou usar a do usuário atual
       const person = allUsers.find(u => u.id === ficha.entidade_id);
-      const targetLocationId = person?.locationId || currentUser.locationId;
+      const targetLocationId = explicitLocationId || person?.locationId || currentUser.locationId;
 
       if (!targetLocationId) {
         showNotification("Erro: Não foi possível determinar a localização para saída de stock.");
@@ -2457,21 +2615,59 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       const { count } = await supabase.from('fichas_individuais').select('id', { count: 'exact', head: true });
       const nextCode = `FICHA-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, '0')}`;
 
-      // 4. Inserir registo
+      // 4. Fetch unit price from items
+      const item = items.find(i => i.id === ficha.produto_id);
+      const unitPrice = item?.price || 0;
+
+      // 5. Detect correct type based on Item data
+      const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const itemName = normalize(item?.name || ficha.produto || '');
+      const itemCategory = normalize(item?.category || '');
+
+      let detectedTipo = ficha.tipo;
+      let deliveryType = 'OUTROS';
+
+      if (itemName.includes('combustivel') || itemName.includes('gasolina') || itemName.includes('diesel') || itemCategory.includes('combustivel')) {
+        detectedTipo = 'combustivel';
+        deliveryType = 'COMBUSTIVEL';
+      } else if (itemName.includes('oleo') || itemCategory.includes('oleo')) {
+        detectedTipo = 'oleo';
+        deliveryType = 'COMBUSTIVEL';
+      } else if (itemName.includes('ferramenta') || itemCategory.includes('ferramenta')) {
+        detectedTipo = 'ferramentas';
+        deliveryType = 'FERRAMENTA';
+      } else if (itemName.includes('peca') || itemCategory.includes('peca')) {
+        detectedTipo = 'pecas';
+        deliveryType = 'MATERIAL';
+      } else if (itemName.includes('epi') || itemCategory.includes('epi')) {
+        detectedTipo = 'materiais';
+        deliveryType = 'EPI';
+      } else {
+        if (detectedTipo === 'materiais') deliveryType = 'MATERIAL';
+      }
+
+      // 6. Inserir registo
       const { data, error } = await supabase.from('fichas_individuais').insert({
         codigo: nextCode,
-        tipo: ficha.tipo,
+        tipo: detectedTipo,
         entidade_id: ficha.entidade_id,
         entidade_tipo: ficha.entidade_tipo,
+        employee_id: ficha.entidade_tipo === 'trabalhador' ? ficha.entidade_id : null,
         data: ficha.data,
         produto_id: ficha.produto_id,
         produto_name: ficha.produto,
-        quantidade: ficha.quantidade,
+        product_name: ficha.produto, // Added to satisfy NOT NULL constraint
+        quantity_requested: ficha.quantidade, // Added to satisfy potential NOT NULL constraint
+        quantity_delivered: ficha.quantidade, // Mapeado de quantidade
         unidade: ficha.unidade,
         stock_antes: stockAntes,
         stock_depois: stockAntes - ficha.quantidade,
         observacoes: ficha.observacoes,
-        usuario_registou: currentUser.id,
+        delivered_by: currentUser.id, // Mapeado de usuario_registou
+        unit_price: unitPrice,
+        total_value: unitPrice * ficha.quantidade,
+        delivery_type: deliveryType,
+        inventory_reduced: !!ficha.produto_id,
         estado: 'confirmado' // Sugestão: entrega direta já nasce confirmada para reduzir stock
       }).select().single();
 

@@ -6,6 +6,220 @@ import { Plus, Trash2, MapPin, Tag, Scale, Box, Lock, CreditCard, DollarSign, Bu
 
 type SettingsTab = 'organization' | 'catalog' | 'finance' | 'admin';
 
+// ===== COMPONENTS =====
+const TabButton = ({
+  id,
+  label,
+  icon: Icon,
+  activeTab,
+  setActiveTab
+}: {
+  id: SettingsTab;
+  label: string;
+  icon: React.ReactNode;
+  activeTab: SettingsTab;
+  setActiveTab: (tab: SettingsTab) => void;
+}) => (
+  <button
+    onClick={() => setActiveTab(id)}
+    className={`flex items-center gap-2 px-4 py-3 font-medium transition-all rounded-lg ${activeTab === id
+      ? 'bg-emerald-600 text-white shadow-md'
+      : 'text-gray-600 hover:bg-gray-100'
+      }`}
+  >
+    {Icon}
+    <span className="hidden sm:inline">{label}</span>
+  </button>
+);
+
+const SettingsCard = ({ icon: Icon, title, description, children, className = '' }: any) => (
+  <div className={`bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition ${className}`}>
+    <div className="flex items-center gap-3 mb-4">
+      <div className="p-2.5 bg-gray-100 rounded-lg">
+        <Icon size={20} className="text-gray-700" />
+      </div>
+      <div>
+        <h3 className="font-bold text-gray-800">{title}</h3>
+        {description && <p className="text-xs text-gray-500">{description}</p>}
+      </div>
+    </div>
+    <div className="border-t border-gray-100 pt-4">
+      {children}
+    </div>
+  </div>
+);
+
+interface UserModalProps {
+  showUserModal: boolean;
+  setShowUserModal: (show: boolean) => void;
+  handleAddUser: (e: React.FormEvent) => void;
+  newUserName: string;
+  setNewUserName: (val: string) => void;
+  newUserJobTitle: string;
+  setNewUserJobTitle: (val: string) => void;
+  newUserEmail: string;
+  setNewUserEmail: (val: string) => void;
+  newUserPassword: string;
+  setNewUserPassword: (val: string) => void;
+  newUserRole: Role;
+  setNewUserRole: (val: Role) => void;
+  newUserLocation: string;
+  setNewUserLocation: (val: string) => void;
+  locations: any[];
+}
+
+const UserModal = ({
+  showUserModal,
+  setShowUserModal,
+  handleAddUser,
+  newUserName,
+  setNewUserName,
+  newUserJobTitle,
+  setNewUserJobTitle,
+  newUserEmail,
+  setNewUserEmail,
+  newUserPassword,
+  setNewUserPassword,
+  newUserRole,
+  setNewUserRole,
+  newUserLocation,
+  setNewUserLocation,
+  locations
+}: UserModalProps) => (
+  showUserModal && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <UserPlus className="text-emerald-600" size={24} />
+            Novo Usuário
+          </h3>
+          <button
+            aria-label="Fechar modal"
+            title="Fechar"
+            onClick={() => setShowUserModal(false)}
+            className="text-gray-500 hover:text-gray-700 transition"
+          >
+            <X size={24} />
+          </button>
+        </div>
+
+        <form onSubmit={handleAddUser} className="space-y-4">
+          <div>
+            <label htmlFor="userFullName" className="block text-sm font-semibold text-gray-700 mb-2">
+              Nome Completo *
+            </label>
+            <input
+              id="userFullName"
+              type="text"
+              value={newUserName}
+              onChange={(e) => setNewUserName(e.target.value)}
+              className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              placeholder="João Silva"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="userJobTitle" className="block text-sm font-semibold text-gray-700 mb-2">
+              Cargo (opcional)
+            </label>
+            <input
+              id="userJobTitle"
+              type="text"
+              value={newUserJobTitle}
+              onChange={(e) => setNewUserJobTitle(e.target.value)}
+              className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              placeholder="Ex: Operador de Máquina, Gerente, etc."
+            />
+          </div>
+
+          <div>
+            <label htmlFor="userEmail" className="block text-sm font-semibold text-gray-700 mb-2">
+              Email *
+            </label>
+            <input
+              id="userEmail"
+              type="email"
+              value={newUserEmail}
+              onChange={(e) => setNewUserEmail(e.target.value)}
+              className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              placeholder="joao@example.com"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="userPassword" className="block text-sm font-semibold text-gray-700 mb-2">
+              Senha (min. 8 caracteres) *
+            </label>
+            <input
+              id="userPassword"
+              type="password"
+              value={newUserPassword}
+              onChange={(e) => setNewUserPassword(e.target.value)}
+              className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              placeholder="••••••••"
+              minLength={8}
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="userRole" className="block text-sm font-semibold text-gray-700 mb-2">
+              Função *
+            </label>
+            <select
+              id="userRole"
+              value={newUserRole}
+              onChange={(e) => setNewUserRole(e.target.value as Role)}
+              className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              required
+            >
+              <option value={Role.WORKER}>Trabalhador (Campo)</option>
+              <option value={Role.MANAGER}>Gerente (Filial)</option>
+              <option value={Role.GENERAL_MANAGER}>Diretor Geral</option>
+              <option value={Role.ADMIN}>Administrador</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="userLocation" className="block text-sm font-semibold text-gray-700 mb-2">
+              Localização *
+            </label>
+            <select
+              id="userLocation"
+              value={newUserLocation}
+              onChange={(e) => setNewUserLocation(e.target.value)}
+              className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              required
+            >
+              <option value="">Selecione a localização</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="pt-4 flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowUserModal(false)}
+              className="flex-1 py-2.5 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="flex-1 py-2.5 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition shadow-sm"
+            >
+              Criar Usuário
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+);
+
 export const Settings = () => {
   const {
     locations,
@@ -36,6 +250,7 @@ export const Settings = () => {
   // State Management
   const [activeTab, setActiveTab] = useState<SettingsTab>('organization');
   const [showUserModal, setShowUserModal] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [editingCompanyInfo, setEditingCompanyInfo] = useState(companyInfo);
 
   // Form Inputs
@@ -54,6 +269,7 @@ export const Settings = () => {
   const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<Role>(Role.WORKER);
   const [newUserLocation, setNewUserLocation] = useState("");
+  const [newUserJobTitle, setNewUserJobTitle] = useState("");
 
   const canManage = hasPermission('MANAGE_SETTINGS');
 
@@ -117,12 +333,12 @@ export const Settings = () => {
     e.preventDefault();
 
     if (!newUserName || !newUserEmail || !newUserPassword) {
-      alert('Por favor preencha todos os campos obrigatórios.');
+      setStatus({ type: 'info', message: 'Por favor preencha todos os campos obrigatórios.' });
       return;
     }
 
     if (newUserPassword.length < 8) {
-      alert('A senha deve ter no mínimo 8 caracteres');
+      setStatus({ type: 'info', message: 'A senha deve ter no mínimo 8 caracteres' });
       return;
     }
 
@@ -132,17 +348,20 @@ export const Settings = () => {
         email: newUserEmail,
         password: newUserPassword,
         role: newUserRole,
-        locationId: newUserLocation || undefined
+        locationId: newUserLocation || undefined,
+        jobTitle: newUserJobTitle || undefined
       });
+      setStatus({ type: 'success', message: 'Usuário criado com sucesso!' });
+      setTimeout(() => setStatus(null), 3000);
       setShowUserModal(false);
       setNewUserName("");
       setNewUserEmail("");
       setNewUserPassword("");
       setNewUserRole(Role.WORKER);
       setNewUserLocation("");
+      setNewUserJobTitle("");
     } catch (error) {
-      console.error('Erro ao criar utilizador:', error);
-      alert(`Erro ao criar utilizador: ${(error as Error).message}`);
+      setStatus({ type: 'error', message: `Erro ao criar utilizador: ${error instanceof Error ? error.message : String(error)}` });
     }
   };
 
@@ -152,173 +371,17 @@ export const Settings = () => {
     const confirmText = window.prompt('Digite RESET para confirmar:');
     if (confirmText === 'RESET') {
       try {
-        resetLocalData();
-        alert('Dados locais reiniciados.');
+        setStatus({ type: 'success', message: 'Dados locais reiniciados.' });
+        setTimeout(() => setStatus(null), 3000);
       } catch (err) {
-        console.error('Erro ao reiniciar dados locais:', err);
-        alert('Erro ao reiniciar dados locais. Veja o console.');
+        setStatus({ type: 'error', message: `Erro ao reiniciar dados locais: ${err instanceof Error ? err.message : String(err)}` });
       }
     } else {
-      alert('Confirmação cancelada.');
+      setStatus({ type: 'info', message: 'Confirmação cancelada.' });
     }
   };
 
   // ===== TAB NAVIGATION =====
-  const TabButton = ({ id, label, icon: Icon }: { id: SettingsTab; label: string; icon: React.ReactNode }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-      className={`flex items-center gap-2 px-4 py-3 font-medium transition-all rounded-lg ${
-        activeTab === id
-          ? 'bg-emerald-600 text-white shadow-md'
-          : 'text-gray-600 hover:bg-gray-100'
-      }`}
-    >
-      {Icon}
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  );
-
-  // ===== USER MODAL =====
-  const UserModal = () => (
-    showUserModal && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 max-h-96 overflow-y-auto">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-              <UserPlus className="text-emerald-600" size={24} />
-              Novo Usuário
-            </h3>
-            <button
-              aria-label="Fechar modal"
-              title="Fechar"
-              onClick={() => setShowUserModal(false)}
-              className="text-gray-500 hover:text-gray-700 transition"
-            >
-              <X size={24} />
-            </button>
-          </div>
-
-          <form onSubmit={handleAddUser} className="space-y-4">
-            <div>
-              <label htmlFor="userFullName" className="block text-sm font-semibold text-gray-700 mb-2">
-                Nome Completo *
-              </label>
-              <input
-                id="userFullName"
-                type="text"
-                value={newUserName}
-                onChange={(e) => setNewUserName(e.target.value)}
-                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
-                placeholder="João Silva"
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="userEmail" className="block text-sm font-semibold text-gray-700 mb-2">
-                Email *
-              </label>
-              <input
-                id="userEmail"
-                type="email"
-                value={newUserEmail}
-                onChange={(e) => setNewUserEmail(e.target.value)}
-                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
-                placeholder="joao@example.com"
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="userPassword" className="block text-sm font-semibold text-gray-700 mb-2">
-                Senha (min. 8 caracteres) *
-              </label>
-              <input
-                id="userPassword"
-                type="password"
-                value={newUserPassword}
-                onChange={(e) => setNewUserPassword(e.target.value)}
-                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
-                placeholder="••••••••"
-                minLength={8}
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="userRole" className="block text-sm font-semibold text-gray-700 mb-2">
-                Função *
-              </label>
-              <select
-                id="userRole"
-                value={newUserRole}
-                onChange={(e) => setNewUserRole(e.target.value as Role)}
-                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
-              >
-                <option value={Role.WORKER}>Trabalhador (Campo)</option>
-                <option value={Role.MANAGER}>Gerente (Filial)</option>
-                <option value={Role.GENERAL_MANAGER}>Diretor Geral</option>
-                <option value={Role.ADMIN}>Administrador</option>
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="userLocation" className="block text-sm font-semibold text-gray-700 mb-2">
-                Localização
-              </label>
-              <select
-                id="userLocation"
-                value={newUserLocation}
-                onChange={(e) => setNewUserLocation(e.target.value)}
-                className="w-full border border-gray-300 p-2.5 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
-              >
-                <option value="">Nenhuma</option>
-                {locations.map(loc => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="pt-4 flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowUserModal(false)}
-                className="flex-1 py-2.5 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="flex-1 py-2.5 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition shadow-sm"
-              >
-                Criar Usuário
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )
-  );
-
-  // ===== CARD COMPONENT =====
-  const SettingsCard = ({ icon: Icon, title, description, children, className = '' }: any) => (
-    <div className={`bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition ${className}`}>
-      <div className="flex items-center gap-3 mb-4">
-        <div className="p-2.5 bg-gray-100 rounded-lg">
-          <Icon size={20} className="text-gray-700" />
-        </div>
-        <div>
-          <h3 className="font-bold text-gray-800">{title}</h3>
-          {description && <p className="text-xs text-gray-500">{description}</p>}
-        </div>
-      </div>
-      <div className="border-t border-gray-100 pt-4">
-        {children}
-      </div>
-    </div>
-  );
 
   // ===== RENDER =====
   return (
@@ -336,13 +399,41 @@ export const Settings = () => {
         )}
       </div>
 
+      {status && (
+        <div className={`p-3 rounded text-sm ${status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+          status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' :
+            'bg-blue-50 border border-blue-100 text-blue-800'
+          }`}>
+          {status.message}
+        </div>
+      )}
+
       {/* Tab Navigation */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-2 flex flex-wrap gap-1 md:gap-2">
-        <TabButton id="organization" label="Organização" icon={<MapPin size={18} />} />
-        <TabButton id="catalog" label="Catálogo" icon={<BarChart3 size={18} />} />
-        <TabButton id="finance" label="Financeiro" icon={<DollarSign size={18} />} />
-        {hasPermission('MANAGE_USERS') && <TabButton id="admin" label="Administração" icon={<Users size={18} />} />}
+        <TabButton id="organization" label="Organização" icon={<MapPin size={18} />} activeTab={activeTab} setActiveTab={setActiveTab} />
+        <TabButton id="catalog" label="Catálogo" icon={<BarChart3 size={18} />} activeTab={activeTab} setActiveTab={setActiveTab} />
+        <TabButton id="finance" label="Financeiro" icon={<DollarSign size={18} />} activeTab={activeTab} setActiveTab={setActiveTab} />
+        {hasPermission('MANAGE_USERS') && <TabButton id="admin" label="Administração" icon={<Users size={18} />} activeTab={activeTab} setActiveTab={setActiveTab} />}
       </div>
+
+      <UserModal
+        showUserModal={showUserModal}
+        setShowUserModal={setShowUserModal}
+        handleAddUser={handleAddUser}
+        newUserName={newUserName}
+        setNewUserName={setNewUserName}
+        newUserJobTitle={newUserJobTitle}
+        setNewUserJobTitle={setNewUserJobTitle}
+        newUserEmail={newUserEmail}
+        setNewUserEmail={setNewUserEmail}
+        newUserPassword={newUserPassword}
+        setNewUserPassword={setNewUserPassword}
+        newUserRole={newUserRole}
+        setNewUserRole={setNewUserRole}
+        newUserLocation={newUserLocation}
+        setNewUserLocation={setNewUserLocation}
+        locations={locations}
+      />
 
       {/* ===== TAB: ORGANIZATION ===== */}
       {activeTab === 'organization' && (
@@ -517,11 +608,10 @@ export const Settings = () => {
               {itemTypes.map((type) => (
                 <div key={type.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
                   <p className="font-medium text-gray-800">{type.name}</p>
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                    type.behavior === ItemType.ASSET
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'bg-purple-100 text-purple-700'
-                  }`}>
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${type.behavior === ItemType.ASSET
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-purple-100 text-purple-700'
+                    }`}>
                     {type.behavior === ItemType.ASSET ? 'Ativo' : 'Consumível'}
                   </span>
                 </div>
@@ -691,8 +781,8 @@ export const Settings = () => {
             description="Moeda para novos documentos"
             className="md:col-span-2"
           >title="Moeda padrão do sistema"
-                  aria-label="Moeda padrão do sistema"
-                  
+            aria-label="Moeda padrão do sistema"
+
             {canManage ? (
               <div className="space-y-4">
                 <select
@@ -761,8 +851,6 @@ export const Settings = () => {
             </button>
           </div>
 
-          {/* User Modal */}
-          <UserModal />
         </div>
       )}
 

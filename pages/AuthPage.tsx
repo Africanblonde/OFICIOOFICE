@@ -1,22 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { LOCATIONS } from '../constants';
-import { LogIn, UserPlus, Loader2 } from 'lucide-react';
+import { LogIn, UserPlus, Loader2, Copy, Check, ArrowRight, Building2, User as UserIcon, MapPin, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface AuthPageProps {
     onAuthSuccess: () => void;
 }
 
+type OnboardingStep = 'auth' | 'profile' | 'company' | 'confirm';
+
 export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
     const [isLogin, setIsLogin] = useState(true);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [name, setName] = useState('');
-    const [jobTitle, setJobTitle] = useState('');
-    const [locationId, setLocationId] = useState('');
+    const [step, setStep] = useState<OnboardingStep>('auth');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+
+    // Auth Form State
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+
+    // Profile State
+    const [name, setName] = useState('');
+    const [jobTitle, setJobTitle] = useState('');
+    const [role, setRole] = useState<'ADMIN' | 'GENERAL_MANAGER' | 'WORKER'>('WORKER');
+
+    // Company/Sede State
+    const [companyName, setCompanyName] = useState('');
+    const [companyAddress, setCompanyAddress] = useState('');
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -24,19 +35,32 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
         setError(null);
 
         try {
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
-
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
             if (error) throw error;
-
             if (data.user) {
-                setMessage('Login bem-sucedido! Redirecionando...');
-                setTimeout(() => onAuthSuccess(), 1000);
+                console.log('✅ Login bem-sucedido para:', data.user.email);
+                // Check if user has a profile/location
+                const { data: profile, error: profileError } = await supabase
+                    .from('users')
+                    .select('location_id')
+                    .eq('id', data.user.id)
+                    .single();
+
+                if (profileError && profileError.code !== 'PGRST116') {
+                    console.error('Erro ao buscar perfil:', profileError);
+                }
+
+                if (profile?.location_id) {
+                    console.log('✅ Usuário já tem location_id, indo para dashboard');
+                    onAuthSuccess();
+                } else {
+                    console.log('ℹ️ Usuário sem location_id, começando onboarding');
+                    setStep('profile');
+                }
             }
         } catch (err: any) {
-            setError(err.message || 'Erro ao fazer login');
+            console.error('❌ Erro no login:', err);
+            setError(err.message || 'Erro ao entrar');
         } finally {
             setLoading(false);
         }
@@ -44,224 +68,355 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
 
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
+
+        // Basic client-side validation before collecting profile
+        if (!email?.trim()) {
+            setError('Por favor, preencha um email válido');
+            return;
+        }
+        if (!password || password.length < 6) {
+            setError('A senha precisa ter ao menos 6 caracteres');
+            return;
+        }
+
+        console.log('ℹ️ Validado email/senha — avançando para coleta de perfil');
+        setStep('profile');
+    };
+
+    const handleProfileSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        // Validate profile fields
+        if (!name?.trim()) {
+            setError('Por favor, preencha seu nome');
+            return;
+        }
+        if (!jobTitle?.trim()) {
+            setError('Por favor, preencha seu cargo');
+            return;
+        }
+        if (!role) {
+            setError('Por favor, selecione seu cargo/função');
+            return;
+        }
+
+        setError(null);
+        console.log('✅ Perfil validado, indo para próximo passo');
+        setStep('company');
+    };
+
+    const handleOnboardingComplete = async (e: React.FormEvent) => {
+        e.preventDefault();
         setLoading(true);
         setError(null);
 
         try {
-            // Build metadata object for auth user (trigger will map these into profile when possible)
-            const userMeta: any = { name };
-            if (jobTitle) userMeta.jobTitle = jobTitle;
-            if (locationId) userMeta.locationId = locationId;
+            // Validate form inputs
+            if (!companyName?.trim()) {
+                throw new Error('Por favor, preencha o nome da empresa');
+            }
+            if (!companyAddress?.trim()) {
+                throw new Error('Por favor, preencha a localização/endereço');
+            }
+            if (!name?.trim()) {
+                throw new Error('Por favor, preencha seu nome');
+            }
+            if (!jobTitle?.trim()) {
+                throw new Error('Por favor, preencha seu cargo');
+            }
 
-            const { data, error } = await supabase.auth.signUp({
+            console.log('🔍 Iniciando processo de registo nativo...', { email, name, role });
+
+            const { data, error: signupError } = await supabase.auth.signUp({
                 email,
                 password,
                 options: {
-                    data: userMeta,
-                },
+                    data: {
+                        name,
+                        jobTitle,
+                        role,
+                        company: {
+                            name: companyName,
+                            address: companyAddress
+                        }
+                    }
+                }
             });
 
-            if (error) throw error;
+            if (signupError) throw signupError;
 
-            if (data.user) {
-                setMessage('Conta criada com sucesso! Verifique seu email para confirmar.');
-                // Clear form
-                setEmail('');
-                setPassword('');
-                setName('');
-            }
+            setMessage('Registro realizado com sucesso! Verifique seu e-mail para confirmar a conta e ativar o seu acesso.');
+            setStep('confirm');
         } catch (err: any) {
-            setError(err.message || 'Erro ao criar conta');
+            console.error('❌ Erro no onboarding:', err);
+            setError(err.message || 'Erro desconhecido ao finalizar onboarding');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-blue-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-md">
-                {/* Logo/Header */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-600 rounded-2xl mb-4">
-                        <span className="text-3xl">🌲</span>
+        <div className="min-h-screen animated-bg flex items-center justify-center p-4 overflow-hidden relative font-sans">
+            {/* Decorative background elements - subtler for light theme */}
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-emerald-500/10 blur-[120px] rounded-full" />
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full" />
+
+            <div className="w-full max-w-xl relative z-10">
+                {/* Header */}
+                <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6 }}
+                    className="text-center mb-10"
+                >
+                    <div className="inline-flex items-center justify-center w-20 h-20 glass rounded-3xl mb-6 shadow-xl">
+                        <span className="text-4xl text-slate-900">🌲</span>
                     </div>
-                    <h1 className="text-3xl font-bold text-gray-800">OFICE</h1>
-                    <p className="text-gray-600 mt-2">Sistema de Gestão Operacional</p>
-                </div>
+                    <h1 className="text-5xl font-black text-slate-950 tracking-tight mb-2">OFICE</h1>
+                    <p className="text-slate-700 font-bold text-lg">Gestão Operacional de Próxima Geração</p>
+                </motion.div>
 
-                {/* Auth Card */}
-                <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-                    {/* Toggle Buttons */}
-                    <div className="flex gap-2 mb-6 bg-gray-100 p-1 rounded-lg">
-                        <button
-                            onClick={() => {
-                                setIsLogin(true);
-                                setError(null);
-                                setMessage(null);
-                            }}
-                            className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${isLogin
-                                    ? 'bg-white text-emerald-600 shadow-sm'
-                                    : 'text-gray-600 hover:text-gray-800'
-                                }`}
+                <AnimatePresence mode="wait">
+                    {step === 'auth' && (
+                        <motion.div
+                            key="auth"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            className="glass rounded-[2rem] shadow-2xl p-10 border border-slate-200"
                         >
-                            <LogIn size={18} className="inline mr-2" />
-                            Entrar
-                        </button>
-                        <button
-                            onClick={() => {
-                                setIsLogin(false);
-                                setError(null);
-                                setMessage(null);
-                            }}
-                            className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${!isLogin
-                                    ? 'bg-white text-emerald-600 shadow-sm'
-                                    : 'text-gray-600 hover:text-gray-800'
-                                }`}
-                        >
-                            <UserPlus size={18} className="inline mr-2" />
-                            Criar Conta
-                        </button>
-                    </div>
+                            <div className="flex gap-4 mb-8 bg-slate-200/50 p-1.5 rounded-2xl">
+                                <button
+                                    onClick={() => setIsLogin(true)}
+                                    className={`flex-1 py-3 px-6 rounded-xl font-bold transition-all duration-300 ${isLogin ? 'bg-white text-emerald-700 shadow-md transform scale-[1.02]' : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                >
+                                    Entrar
+                                </button>
+                                <button
+                                    onClick={() => setIsLogin(false)}
+                                    className={`flex-1 py-3 px-6 rounded-xl font-bold transition-all duration-300 ${!isLogin ? 'bg-white text-emerald-700 shadow-md transform scale-[1.02]' : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                >
+                                    Novo Registro
+                                </button>
+                            </div>
 
-                    {/* Messages */}
-                    {error && (
-                        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-                            {error}
-                        </div>
-                    )}
-                    {message && (
-                        <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
-                            {message}
-                        </div>
-                    )}
+                            {error && (
+                                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 p-4 bg-red-100 border border-red-200 text-red-900 rounded-2xl text-sm font-bold">
+                                    {error}
+                                </motion.div>
+                            )}
 
-                    {/* Form */}
-                    <form onSubmit={isLogin ? handleLogin : handleSignup} className="space-y-4">
-                                    {!isLogin && (
-                            <>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Nome Completo
-                                    </label>
+                            <form onSubmit={isLogin ? handleLogin : handleSignup} className="space-y-6">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-slate-900 ml-2">Email Profissional</label>
+                                    <div className="relative">
+                                        <input
+                                            id="auth-email"
+                                            name="email"
+                                            type="email"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            className="w-full px-6 py-4 bg-white/50 border border-slate-300 rounded-2xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all font-medium"
+                                            placeholder="exemplo@empresa.com"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-slate-900 ml-2">Sua Senha</label>
                                     <input
+                                        id="auth-password"
+                                        name="password"
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full px-6 py-4 bg-white/50 border border-slate-300 rounded-2xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all font-medium"
+                                        placeholder="••••••••"
+                                        required
+                                        minLength={6}
+                                    />
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full bg-emerald-600 text-black py-5 rounded-2xl font-black text-lg hover:bg-emerald-700 hover:text-white active:scale-[0.98] transition-all shadow-xl shadow-emerald-900/10 flex items-center justify-center gap-3"
+                                >
+                                    {loading ? <Loader2 size={24} className="animate-spin text-black" /> : isLogin ? 'Acessar Painel' : 'Iniciar Jornada'}
+                                    {!loading && <ArrowRight size={20} className="text-black" />}
+                                </button>
+                            </form>
+                        </motion.div>
+                    )}
+
+                    {step === 'profile' && (
+                        <motion.div
+                            key="profile"
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="glass rounded-[2rem] shadow-2xl p-10 border border-slate-200"
+                        >
+                            <div className="text-center mb-8">
+                                <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 rounded-full mb-4">
+                                    <UserIcon size={32} className="text-emerald-700" />
+                                </div>
+                                <h2 className="text-3xl font-black text-slate-950">Sobre Você</h2>
+                                <p className="text-slate-600 font-bold">Vamos personalizar sua experiência</p>
+                            </div>
+
+                            <form onSubmit={handleProfileSubmit} className="space-y-6">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-slate-900 ml-2">Como devemos te chamar?</label>
+                                    <input
+                                        id="profile-name"
+                                        name="name"
                                         type="text"
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                        placeholder="João Silva"
-                                        required={!isLogin}
-                                        aria-label="Nome completo"
+                                        className="w-full px-6 py-4 bg-white/50 border border-slate-300 rounded-2xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all font-medium"
+                                        placeholder="Seu Nome Completo"
+                                        required
                                     />
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Cargo (opcional)</label>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-slate-900 ml-2">Qual seu cargo/função?</label>
+                                    <select
+                                        id="profile-role"
+                                        name="role"
+                                        value={role}
+                                        onChange={(e) => setRole(e.target.value as 'ADMIN' | 'GENERAL_MANAGER' | 'WORKER')}
+                                        className="w-full px-6 py-4 bg-white/50 border border-slate-300 rounded-2xl text-slate-950 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all font-medium"
+                                        required
+                                    >
+                                        <option value="WORKER">Colaborador (Worker)</option>
+                                        <option value="GENERAL_MANAGER">Gerente Geral (Manager)</option>
+                                        <option value="ADMIN">Administrador (Admin)</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-slate-900 ml-2">Descrição do seu cargo (opcional)</label>
                                     <input
+                                        id="profile-jobtitle"
+                                        name="jobTitle"
                                         type="text"
                                         value={jobTitle}
                                         onChange={(e) => setJobTitle(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                        placeholder="Ex.: Motosserrista"
-                                        aria-label="Cargo"
+                                        className="w-full px-6 py-4 bg-white/50 border border-slate-300 rounded-2xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all font-medium"
+                                        placeholder="Ex: Gestor de Operações, Técnico, etc."
                                     />
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Local (opcional)</label>
-                                    <select
-                                        value={locationId}
-                                        onChange={(e) => setLocationId(e.target.value)}
-                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                        aria-label="Localização"
-                                    >
-                                        <option value="">Sem local</option>
-                                        {LOCATIONS.map(loc => (
-                                            <option key={loc.id} value={loc.id}>{loc.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </>
-                        )}
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Email
-                            </label>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                placeholder="seu@email.com"
-                                required
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Senha
-                            </label>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                                placeholder="••••••••"
-                                required
-                                minLength={6}
-                            />
-                            {!isLogin && (
-                                <p className="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p>
-                            )}
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                            {loading ? (
-                                <>
-                                    <Loader2 size={20} className="animate-spin" />
-                                    Processando...
-                                </>
-                            ) : isLogin ? (
-                                'Entrar'
-                            ) : (
-                                'Criar Conta'
-                            )}
-                        </button>
-                    </form>
-
-                    {/* Development Bypass */}
-                    <div className="mt-6 pt-6 border-t border-gray-200">
-                        <button
-                            onClick={() => onAuthSuccess()}
-                            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-                            title="Bypass authentication for development (only works if Supabase is not configured)"
-                        >
-                            🔧 Development Mode (Skip Auth)
-                        </button>
-                        <p className="text-xs text-gray-500 mt-2 text-center">
-                            Only use this for testing the UI while setting up Supabase
-                        </p>
-                    </div>
-
-                    {/* Footer */}
-                    {isLogin && (
-                        <div className="mt-4 text-center">
-                            <a href="#" className="text-sm text-emerald-600 hover:text-emerald-700">
-                                Esqueceu a senha?
-                            </a>
-                        </div>
+                                <button
+                                    type="submit"
+                                    className="w-full bg-emerald-600 text-black py-5 rounded-2xl font-black text-lg hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-3"
+                                >
+                                    Próximo Passo
+                                    <ArrowRight size={20} className="text-black" />
+                                </button>
+                            </form>
+                        </motion.div>
                     )}
-                </div>
 
-                {/* Info Footer */}
-                <div className="mt-6 text-center text-sm text-gray-600">
-                    <p>Sistema de Gestão Operacional Florestal</p>
-                    <p className="mt-1">© 2025 OFICE - Todos os direitos reservados</p>
-                </div>
+                    {step === 'company' && (
+                        <motion.div
+                            key="company"
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="glass rounded-[2rem] shadow-2xl p-10 border border-slate-200"
+                        >
+                            <div className="text-center mb-8">
+                                <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 rounded-full mb-4">
+                                    <Building2 size={32} className="text-emerald-700" />
+                                </div>
+                                <h2 className="text-3xl font-black text-slate-950">Sede da Empresa</h2>
+                                <p className="text-slate-600 font-bold">Onde as decisões acontecem</p>
+                            </div>
+
+                            <form onSubmit={handleOnboardingComplete} className="space-y-6">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-slate-900 ml-2">Nome da Unidade/Empresa</label>
+                                    <div className="relative">
+                                        <Building2 size={18} className="absolute left-6 top-5 text-slate-400" />
+                                        <input
+                                            id="company-name"
+                                            name="companyName"
+                                            type="text"
+                                            value={companyName}
+                                            onChange={(e) => setCompanyName(e.target.value)}
+                                            className="w-full pl-14 pr-6 py-4 bg-white/50 border border-slate-300 rounded-2xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/20 transition-all font-medium"
+                                            placeholder="Nome oficial da sede"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold text-slate-900 ml-2">Localização/Endereço</label>
+                                    <div className="relative">
+                                        <MapPin size={18} className="absolute left-6 top-5 text-slate-400" />
+                                        <input
+                                            id="company-address"
+                                            name="address"
+                                            type="text"
+                                            value={companyAddress}
+                                            onChange={(e) => setCompanyAddress(e.target.value)}
+                                            className="w-full pl-14 pr-6 py-4 bg-white/50 border border-slate-300 rounded-2xl text-slate-950 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/30 transition-all font-medium"
+                                            placeholder="Cidade, Estado ou Morada Completa"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full bg-emerald-500 text-black py-5 rounded-2xl font-black text-lg hover:bg-emerald-600 active:scale-[0.98] transition-all shadow-xl shadow-emerald-900/10 flex items-center justify-center gap-3"
+                                >
+                                    {loading ? <Loader2 size={24} className="animate-spin text-black" /> : 'Concluir Registro'}
+                                    {!loading && <Sparkles size={20} className="text-black" />}
+                                </button>
+                            </form>
+                        </motion.div>
+                    )}
+
+                    {step === 'confirm' && (
+                        <motion.div
+                            key="confirm"
+                            initial={{ opacity: 0, scale: 0.98 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="glass rounded-[2rem] shadow-2xl p-10 border border-slate-200 text-center"
+                        >
+                            <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-4 mx-auto">
+                                <Check size={28} className="text-emerald-700" />
+                            </div>
+                            <h2 className="text-2xl font-black text-slate-950 mb-2">Quase lá!</h2>
+                            <p className="text-slate-600 mb-6">{message || 'Verifique seu e-mail e confirme seu cadastro para acessar a plataforma.'}</p>
+
+                            <button
+                                onClick={() => { setStep('auth'); setIsLogin(true); }}
+                                className="w-full bg-emerald-600 text-black py-4 rounded-2xl font-black text-lg hover:bg-emerald-700 active:scale-[0.98] transition-all shadow-xl"
+                            >
+                                Voltar para Login
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Footer Info */}
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.8 }}
+                    className="mt-12 text-center text-slate-500 text-sm font-black tracking-wide"
+                >
+                    OFICE v2.0 • Sitema Inteligente de Gestão Florestal
+                </motion.div>
             </div>
         </div>
     );

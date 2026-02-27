@@ -99,33 +99,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             onClick={() => onNavigate('requisitions')}
             className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-blue-200 transition-all text-left group active:scale-95"
           >
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center mb-2 md:mb-3 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center mb-2 md:mb-3 group-hover:bg-blue-600 group-hover:text-black transition-colors">
               <Truck size={18} />
             </div>
-            <h4 className="font-bold text-gray-800 text-sm md:text-base">Requisições</h4>
-            <p className="text-[10px] md:text-xs text-gray-500 mt-1 line-clamp-1">Gerenciar pedidos</p>
+            <h4 className="font-black text-slate-900 text-sm md:text-base">Requisições</h4>
+            <p className="text-[10px] md:text-xs text-slate-500 mt-1 font-bold line-clamp-1">Gerenciar pedidos</p>
           </button>
 
           <button
             onClick={() => onNavigate('inventory')}
             className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-emerald-200 transition-all text-left group active:scale-95"
           >
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center mb-2 md:mb-3 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center mb-2 md:mb-3 group-hover:bg-emerald-600 group-hover:text-black transition-colors">
               <Package size={18} />
             </div>
-            <h4 className="font-bold text-gray-800 text-sm md:text-base">Estoque</h4>
-            <p className="text-[10px] md:text-xs text-gray-500 mt-1 line-clamp-1">Visualizar e adicionar</p>
+            <h4 className="font-black text-slate-900 text-sm md:text-base">Estoque</h4>
+            <p className="text-[10px] md:text-xs text-slate-500 mt-1 font-bold line-clamp-1">Visualizar e adicionar</p>
           </button>
 
           <button
             onClick={() => onNavigate('performance')}
             className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-purple-200 transition-all text-left group active:scale-95"
           >
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center mb-2 md:mb-3 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center mb-2 md:mb-3 group-hover:bg-purple-600 group-hover:text-black transition-colors">
               <ClipboardCheck size={18} />
             </div>
-            <h4 className="font-bold text-gray-800 text-sm md:text-base">Desempenho</h4>
-            <p className="text-[10px] md:text-xs text-gray-500 mt-1 line-clamp-1">RH e Produtividade</p>
+            <h4 className="font-black text-slate-900 text-sm md:text-base">Desempenho</h4>
+            <p className="text-[10px] md:text-xs text-slate-500 mt-1 font-bold line-clamp-1">RH e Produtividade</p>
           </button>
 
           {/* Report Button Protected by Permission */}
@@ -134,24 +134,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               onClick={() => setIsReportModalOpen(true)}
               className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-orange-200 transition-all text-left group active:scale-95"
             >
-              <div className="w-8 h-8 md:w-10 md:h-10 bg-orange-50 text-orange-600 rounded-lg flex items-center justify-center mb-2 md:mb-3 group-hover:bg-orange-600 group-hover:text-white transition-colors">
+              <div className="w-8 h-8 md:w-10 md:h-10 bg-orange-50 text-orange-600 rounded-lg flex items-center justify-center mb-2 md:mb-3 group-hover:bg-orange-600 group-hover:text-black transition-colors">
                 <FileText size={18} />
               </div>
-              <h4 className="font-bold text-gray-800 text-sm md:text-base">Relatórios</h4>
-              <p className="text-[10px] md:text-xs text-gray-500 mt-1 line-clamp-1">Visão Diária</p>
+              <h4 className="font-black text-slate-900 text-sm md:text-base">Relatórios</h4>
+              <p className="text-[10px] md:text-xs text-slate-500 mt-1 font-bold line-clamp-1">Visão Diária</p>
             </button>
           )}
         </div>
       )}
 
       {effectiveLocationId && (
-        <div className="bg-blue-50 border border-blue-100 p-3 md:p-4 rounded-xl flex items-center gap-3 text-blue-800">
-          <div className="bg-blue-100 p-2 rounded-lg">
-            <MapPin size={18} />
+        <div className="bg-emerald-50 border border-emerald-100 p-3 md:p-4 rounded-xl flex items-center gap-3 text-emerald-950">
+          <div className="bg-emerald-100 p-2 rounded-lg">
+            <MapPin size={18} className="text-emerald-700" />
           </div>
           <div>
-            <h3 className="font-bold text-sm md:text-base">Visualizando: {locations.find(l => l.id === effectiveLocationId)?.name}</h3>
-            <p className="text-[10px] md:text-xs text-blue-600">Dados filtrados para este departamento.</p>
+            <h3 className="font-black text-sm md:text-base">Visualizando: {locations.find(l => l.id === effectiveLocationId)?.name}</h3>
+            <p className="text-[10px] md:text-xs text-emerald-700 font-bold">Dados filtrados para este departamento.</p>
           </div>
         </div>
       )}
@@ -159,112 +159,119 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
           <div>
-            <p className="text-xs md:text-sm text-gray-500 font-medium">Req. Pendentes</p>
-            <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">{pendingCount}</h3>
+            <p className="text-xs md:text-sm text-slate-500 font-black uppercase tracking-tighter">Req. Pendentes</p>
+            <h3 className="text-2xl md:text-3xl font-black text-slate-950 mt-1">{pendingCount}</h3>
           </div>
-          <div className="w-10 h-10 md:w-12 md:h-12 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center">
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center shadow-inner">
             <Activity size={20} />
           </div>
         </div>
         <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
           <div>
-            <p className="text-xs md:text-sm text-gray-500 font-medium">Em Trânsito</p>
-            <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">{transitCount}</h3>
+            <p className="text-xs md:text-sm text-slate-500 font-black uppercase tracking-tighter">Em Trânsito</p>
+            <h3 className="text-2xl md:text-3xl font-black text-slate-950 mt-1">{transitCount}</h3>
           </div>
-          <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center shadow-inner">
             <TrendingUp size={20} />
           </div>
         </div>
         <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
           <div>
-            <p className="text-xs md:text-sm text-gray-500 font-medium">Tipos em Estoque</p>
-            <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">{items.length}</h3>
+            <p className="text-xs md:text-sm text-slate-500 font-black uppercase tracking-tighter">Tipos em Estoque</p>
+            <h3 className="text-2xl md:text-3xl font-black text-slate-950 mt-1">{items.length}</h3>
           </div>
-          <div className="w-10 h-10 md:w-12 md:h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
+          <div className="w-10 h-10 md:w-12 md:h-12 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center shadow-inner">
             <ShieldCheck size={20} />
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
-        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 h-80 md:h-96">
-          <h3 className="text-base md:text-lg font-bold text-gray-800 mb-4">Níveis de Estoque</h3>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stockData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10 }} interval={0} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10 }} />
-              <ReTooltip />
-              <Bar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]}>
-                {stockData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.total < 5 ? '#ef4444' : '#3b82f6'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200 h-80 md:h-96">
+          <h3 className="text-base md:text-lg font-black text-slate-900 mb-4 uppercase tracking-widest text-center">Níveis de Estoque</h3>
+          {stockData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+              <BarChart data={stockData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#0f172a' }} interval={0} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 900, fill: '#0f172a' }} />
+                <ReTooltip />
+                <Bar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                  {stockData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.total < 5 ? '#ef4444' : '#10b981'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-400 font-bold italic">
+              Nenhum dado de estoque disponível
+            </div>
+          )}
         </div>
       </div>
 
       {/* --- DAILY REPORT MODAL --- */}
       {isReportModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-end md:items-center justify-center p-0 md:p-4 backdrop-blur-sm">
-          <div className="bg-white w-full md:max-w-5xl h-[90vh] md:h-auto md:max-h-[90vh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 md:zoom-in duration-200">
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end md:items-center justify-center p-0 md:p-4 backdrop-blur-sm">
+          <div className="bg-white w-full md:max-w-5xl h-[90vh] md:h-auto md:max-h-[90vh] rounded-t-2xl md:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 md:zoom-in duration-200 border border-slate-200">
             {/* Modal Header */}
-            <div className="bg-slate-900 text-white p-4 md:p-6 shrink-0 flex justify-between items-start">
+            <div className="bg-slate-50 text-slate-950 p-4 md:p-6 shrink-0 flex justify-between items-start border-b border-slate-200">
               <div>
-                <h2 className="text-xl md:text-2xl font-bold flex items-center gap-2">
-                  <FileText size={24} className="text-orange-400" />
+                <h2 className="text-xl md:text-2xl font-black flex items-center gap-2">
+                  <FileText size={24} className="text-orange-500" />
                   Relatório Diário
                 </h2>
                 <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 mt-2">
-                  <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 w-fit">
-                    <Calendar size={16} className="text-gray-400" />
+                  <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 w-fit">
+                    <Calendar size={16} className="text-slate-500" />
                     <input
                       type="date"
                       value={reportDate}
                       onChange={(e) => setReportDate(e.target.value)}
-                      className="bg-transparent text-white text-sm outline-none cursor-pointer font-medium"
+                      aria-label="Data do Relatório"
+                      className="bg-transparent text-slate-950 text-sm outline-none cursor-pointer font-black"
                     />
                   </div>
                 </div>
               </div>
               <div className="flex gap-2">
-                <button className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded transition hidden md:block" title="Imprimir">
+                <button className="p-2 text-slate-500 hover:text-slate-950 hover:bg-slate-100 rounded-xl transition-all hidden md:block" title="Imprimir">
                   <Printer size={20} />
                 </button>
-                <button onClick={() => setIsReportModalOpen(false)} className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded transition" title="Fechar" aria-label="Fechar">
+                <button onClick={() => setIsReportModalOpen(false)} className="p-2 text-slate-500 hover:text-slate-950 hover:bg-slate-100 rounded-xl transition-all" title="Fechar" aria-label="Fechar">
                   <X size={24} />
                 </button>
               </div>
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50 custom-scrollbar">
 
               {/* 1. Resumo Financeiro Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-                <div className="bg-white p-3 md:p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
-                  <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase">Vendas</span>
-                  <div className="mt-1 flex items-center gap-1 md:gap-2 text-green-600">
-                    <span className="text-lg md:text-2xl font-bold">{formatCurrency(reportData.totalSales)}</span>
+                <div className="bg-white p-3 md:p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                  <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest">Vendas</span>
+                  <div className="mt-1 flex items-center gap-1 md:gap-2 text-emerald-600">
+                    <span className="text-lg md:text-2xl font-black">{formatCurrency(reportData.totalSales)}</span>
                   </div>
                 </div>
-                <div className="bg-white p-3 md:p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
-                  <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase">Despesas</span>
+                <div className="bg-white p-3 md:p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                  <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest">Despesas</span>
                   <div className="mt-1 flex items-center gap-1 md:gap-2 text-red-600">
-                    <span className="text-lg md:text-2xl font-bold">{formatCurrency(reportData.totalExpenses)}</span>
+                    <span className="text-lg md:text-2xl font-black">{formatCurrency(reportData.totalExpenses)}</span>
                   </div>
                 </div>
-                <div className="bg-white p-3 md:p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
-                  <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase">Compras</span>
+                <div className="bg-white p-3 md:p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                  <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest">Compras</span>
                   <div className="mt-1 flex items-center gap-1 md:gap-2 text-blue-600">
-                    <span className="text-lg md:text-2xl font-bold">{formatCurrency(reportData.totalPurchasesValue)}</span>
+                    <span className="text-lg md:text-2xl font-black">{formatCurrency(reportData.totalPurchasesValue)}</span>
                   </div>
                 </div>
-                <div className="bg-white p-3 md:p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col">
-                  <span className="text-[10px] md:text-xs font-bold text-gray-400 uppercase">Faltas</span>
+                <div className="bg-white p-3 md:p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+                  <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest">Faltas</span>
                   <div className="mt-1 flex items-center gap-1 md:gap-2 text-orange-600">
-                    <span className="text-lg md:text-2xl font-bold">{reportData.absentWorkers.length}</span>
+                    <span className="text-lg md:text-2xl font-black">{reportData.absentWorkers.length}</span>
                   </div>
                 </div>
               </div>

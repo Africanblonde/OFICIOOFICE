@@ -23,7 +23,8 @@ import {
   Shield,
   Banknote,
   LogOut,
-  DollarSign
+  DollarSign,
+  MessageCircle
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
@@ -61,7 +62,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
       await refreshData();
       // Se ainda estiver como WORKER após refresh, fazer hard reload
       setTimeout(() => {
-        if (currentUser?.role === 'WORKER' && currentUser?.email === 'davidjuniormuianga@gmail.com') {
+        if (currentUser?.role === 'WORKER' && (currentUser?.email === 'juniormuianga77@gmail.com' || currentUser?.email === 'davidjuniormuianga@gmail.com')) {
           console.log('⚠️ Ainda WORKER após refresh, fazendo hard reload...');
           window.location.reload();
         }
@@ -184,6 +185,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
               <span className="font-medium text-sm">Visão Geral</span>
             </button>
           )}
+
+          <button
+            onClick={() => handleTabClick('chat')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'chat' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
+            aria-label="Abrir chat de equipe"
+            title="Chat de Equipe"
+          >
+            <MessageCircle size={20} />
+            <span className="font-medium text-sm">Chat</span>
+          </button>
 
           {hasPermission('VIEW_REQUISITIONS') && (
             <div className="space-y-1">
@@ -404,13 +415,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
                         activeTab === 'hr' ? 'RH' :
                           activeTab === 'payroll' ? 'Folha Salarial' :
                             activeTab === 'contas-receber' ? 'Contas a Receber' :
-                                activeTab === 'expense-approvals' ? 'Aprovação de Despesas' :
-                                  activeTab === 'expense-reports' ? 'Relatórios de Orçamento' :
-                                    activeTab === 'settings' ? 'Definições' :
-                                      activeTab === 'patrimony' ? 'Patrimônio' :
-                                        activeTab === 'pos' ? 'POS & Vendas' :
-                                          activeTab === 'permissions' ? 'Permissões' :
-                                            'Office Florestal'}
+                              activeTab === 'expense-approvals' ? 'Aprovação de Despesas' :
+                                activeTab === 'expense-reports' ? 'Relatórios de Orçamento' :
+                                  activeTab === 'settings' ? 'Definições' :
+                                    activeTab === 'patrimony' ? 'Patrimônio' :
+                                      activeTab === 'pos' ? 'POS & Vendas' :
+                                        activeTab === 'permissions' ? 'Permissões' :
+                                          'Office Florestal'}
               </h2>
               {selectedDepartmentId && (
                 <div className="flex items-center text-xs text-blue-600 font-medium">

@@ -52,6 +52,9 @@ export interface User {
   role: Role;
   locationId: string | null; // Creates the hierarchy link (null = no location assigned)
   jobTitle?: string; // Cargo (ex: Motosserrista)
+  email?: string;
+  isOnline?: boolean;
+  lastSeen?: string; // ISO timestamp
 
   // New Salary Structure
   defaultDailyGoal?: number; // Meta (ex: 12 árvores)
@@ -59,7 +62,7 @@ export interface User {
   halfDayRate?: number;      // Valor Meio Dia (ex: 118)
   absencePenalty?: number;   // Valor Desconto Falta (ex: 95)
   bonusPerUnit?: number;     // Valor Bónus por árvore extra (ex: 10)
-  email?: string; // Added email field
+
 }
 
 export interface PayrollRecord {
@@ -471,6 +474,10 @@ export interface FichaIndividual {
   stock_depois?: number;
   observacoes?: string;
   usuario_registou: string;
+  unit_price?: number;
+  total_value?: number;
+  delivery_type?: string;
+  inventory_reduced?: boolean;
   estado: RegistoEstado;
   created_at: string;
   updated_at: string;

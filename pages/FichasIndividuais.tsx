@@ -25,7 +25,7 @@ import {
 export const FichasIndividuais = () => {
   const {
     fichasIndividuais, currentUser, allUsers, isAdminOrGM, items, inventory,
-    createFicha, confirmFicha, lockFicha, deleteFicha
+    createFicha, confirmFicha, lockFicha, deleteFicha, locations
   } = useLogistics();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -287,6 +287,7 @@ export const FichasIndividuais = () => {
             allPeople={allUsers}
             allItems={items}
             inventory={inventory}
+            locations={locations}
             currentUser={currentUser}
             onClose={() => setIsModalOpen(false)}
             onSave={async (data) => {
@@ -305,12 +306,13 @@ interface FichaDeliveryModalProps {
   allPeople: User[];
   allItems: Item[];
   inventory: any[];
+  locations: any[];
   currentUser: User | null;
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
 }
 
-const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId, allPeople, allItems, inventory, currentUser, onClose, onSave }) => {
+const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId, allPeople, allItems, inventory, locations, currentUser, onClose, onSave }) => {
   const [formData, setFormData] = useState({
     tipo: 'combustivel' as FichaTipo,
     entidade_id: initialPersonId || '',
@@ -380,7 +382,11 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
         <div className="bg-emerald-600 p-6 text-white flex justify-between items-center">
           <div>
             <h2 className="text-xl font-bold">Registrar Entrega de Material</h2>
-            <p className="text-emerald-100 text-xs mt-1 uppercase tracking-widest font-bold">Saída de Stock Individual</p>
+            {stockLocationId && (
+              <p className="text-emerald-100 text-[10px] mt-1 uppercase tracking-widest font-bold">
+                Saída de: {locations.find(l => l.id === stockLocationId)?.name || 'Localização Desconhecida'}
+              </p>
+            )}
           </div>
           <button title="Fechar" aria-label="Fechar" onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
             <X className="w-6 h-6" />

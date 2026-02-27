@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient';
 
-interface CreateUserPayload {
+export interface CreateUserPayload {
   name: string;
   email: string;
   password: string;
@@ -16,21 +16,8 @@ interface CreateUserPayload {
 
 export async function createUserWithEdge(payload: CreateUserPayload) {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-    if (!supabaseUrl) {
-      throw new Error('VITE_SUPABASE_URL environment variable is not set');
-    }
-
-    const response = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`
-      },
-      body: JSON.stringify({
+    const { data, error } = await supabase.functions.invoke('create-user', {
+      body: {
         email: payload.email,
         password: payload.password,
         userData: {
@@ -44,18 +31,14 @@ export async function createUserWithEdge(payload: CreateUserPayload) {
           absencePenalty: payload.absencePenalty,
           bonusPerUnit: payload.bonusPerUnit
         }
-      })
+      }
     });
 
-    const text = await response.text();
-    let result: any = {};
-    try { result = text ? JSON.parse(text) : {}; } catch (e) { return { success: false, error: 'Invalid JSON response from Edge Function', raw: text }; }
-
-    if (!response.ok) {
-      return { success: false, error: result.error || result.message || `Status ${response.status}`, status: response.status };
+    if (error) {
+      return { success: false, error: error.message || 'Falha ao criar utilizador' };
     }
 
-    return { success: true, data: result };
+    return { success: true, data };
   } catch (err: any) {
     return { success: false, error: err?.message || String(err) };
   }

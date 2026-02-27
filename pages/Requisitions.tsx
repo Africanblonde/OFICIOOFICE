@@ -42,6 +42,7 @@ export const Requisitions = () => {
 
   // State for expand/collapse rows
   const [expandedReqId, setExpandedReqId] = useState<string | null>(null);
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
 
   // Form State
   const [selectedItem, setSelectedItem] = useState(items.length > 0 ? items[0].id : '');
@@ -91,6 +92,58 @@ export const Requisitions = () => {
 
   const toggleExpand = (reqId: string) => {
     setExpandedReqId(expandedReqId === reqId ? null : reqId);
+  };
+
+  const handleUpdateStatus = async (reqId: string, newStatus: RequestStatus) => {
+    setStatus({ type: 'info', message: 'Atualizando status...' });
+    try {
+      await updateRequisitionStatus(reqId, newStatus);
+      setStatus({ type: 'success', message: `Status atualizado: ${newStatus}` });
+      setTimeout(() => setStatus(null), 4000);
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err?.message || String(err) });
+    }
+  };
+
+  const handleUpdateSheetStatus = async (sheetId: string, newStatus: RequestStatus) => {
+    setStatus({ type: 'info', message: 'Atualizando status da ficha...' });
+    try {
+      await updateRequisitionSheetStatus(sheetId, newStatus);
+      setStatus({ type: 'success', message: `Status da ficha atualizado: ${newStatus}` });
+      setTimeout(() => setStatus(null), 4000);
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err?.message || String(err) });
+    }
+  };
+
+  const handleUpdateSheetItemDelivery = async (itemId: string, isDelivered: boolean) => {
+    setStatus({ type: 'info', message: 'Atualizando entrega do item...' });
+    try {
+      await updateRequisitionSheetItemDelivery(itemId, isDelivered);
+      if (isDelivered) {
+        // Buscar detalhes do item e da ficha
+        const sheet = requisitionSheets.find(s => s.items.some(i => i.id === itemId));
+        const item = sheet?.items.find(i => i.id === itemId);
+        if (sheet && item && currentUser) {
+          const { registerEmployeeDelivery } = await import('../services/employeeDeliveryService');
+          await registerEmployeeDelivery({
+            employeeId: sheet.requesterId,
+            itemId: item.itemId ?? undefined,
+            itemName: item.itemName,
+            quantity: item.quantity,
+            unit: item.unit,
+            deliveredBy: currentUser.id,
+            origin: 'REQUISITION',
+            requisitionId: sheet.id,
+            notes: item.notes,
+          });
+        }
+      }
+      setStatus({ type: 'success', message: 'Entrega atualizada.' });
+      setTimeout(() => setStatus(null), 3000);
+    } catch (err: any) {
+      setStatus({ type: 'error', message: err?.message || String(err) });
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -150,13 +203,13 @@ export const Requisitions = () => {
       if (isAdminOrGM || isSourceManager || isTargetManager) {
         return (
           <div className={`flex gap-2 ${mobile ? 'w-full mt-2' : ''}`}>
-            <button
-              onClick={(e) => { e.stopPropagation(); updateRequisitionStatus(req.id, RequestStatus.APPROVED); }}
+              <button
+              onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, RequestStatus.APPROVED); }}
               className={`${btnClass} bg-blue-600 text-white rounded hover:bg-blue-700`}>
               Aprovar
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); updateRequisitionStatus(req.id, RequestStatus.REJECTED); }}
+              onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, RequestStatus.REJECTED); }}
               className={`${btnClass} bg-red-50 text-red-600 rounded hover:bg-red-100 border border-red-200`}>
               Rejeitar
             </button>
@@ -169,7 +222,7 @@ export const Requisitions = () => {
       if (isAdminOrGM || isSourceManager) {
         return (
           <button
-            onClick={(e) => { e.stopPropagation(); updateRequisitionStatus(req.id, RequestStatus.IN_TRANSIT); }}
+            onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, RequestStatus.IN_TRANSIT); }}
             className={`${btnClass} bg-indigo-600 text-white rounded hover:bg-indigo-700 flex items-center gap-1 ${mobile ? 'w-full' : ''}`}>
             <Truck size={12} /> Despachar
           </button>
@@ -182,7 +235,7 @@ export const Requisitions = () => {
       if (isAdminOrGM || isTargetManager) {
         return (
           <button
-            onClick={(e) => { e.stopPropagation(); updateRequisitionStatus(req.id, RequestStatus.DELIVERED); }}
+            onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, RequestStatus.DELIVERED); }}
             className={`${btnClass} bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-1 ${mobile ? 'w-full' : ''}`}>
             <Truck size={12} /> Registrar Chegada
           </button>
@@ -195,7 +248,7 @@ export const Requisitions = () => {
       if (isAdminOrGM || isTargetManager) {
         return (
           <button
-            onClick={(e) => { e.stopPropagation(); updateRequisitionStatus(req.id, RequestStatus.CONFIRMED); }}
+            onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, RequestStatus.CONFIRMED); }}
             className={`${btnClass} bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1 animate-pulse ${mobile ? 'w-full' : ''}`}>
             <PackageCheck size={12} /> Conferir e Aceitar
           </button>
@@ -205,7 +258,7 @@ export const Requisitions = () => {
       if (currentUser?.role === Role.WORKER && req.targetLocationId === currentUser.locationId) {
         return (
           <button
-            onClick={(e) => { e.stopPropagation(); updateRequisitionStatus(req.id, RequestStatus.CONFIRMED); }}
+            onClick={(e) => { e.stopPropagation(); handleUpdateStatus(req.id, RequestStatus.CONFIRMED); }}
             className={`${btnClass} bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1 ${mobile ? 'w-full' : ''}`}>
             <CheckCircle size={12} /> Confirmar
           </button>
@@ -252,6 +305,15 @@ export const Requisitions = () => {
             </button>
           </div>
       </div>
+
+      {status && (
+        <div className={`mb-4 p-3 rounded ${
+          status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+          status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' : 'bg-blue-50 border border-blue-100 text-blue-800'
+        }`}>
+          {status.message}
+        </div>
+      )}
 
       {/* TABS */}
       <div className="flex gap-4 mb-4 border-b border-gray-200">
@@ -477,16 +539,16 @@ export const Requisitions = () => {
                           </td>
                           <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex justify-end gap-2">
-                              {sheet.status === RequestStatus.PENDING && hasAuthority && (
+                                  {sheet.status === RequestStatus.PENDING && hasAuthority && (
                                 <>
                                   <button
-                                    onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.APPROVED)}
+                                    onClick={() => handleUpdateSheetStatus(sheet.id, RequestStatus.APPROVED)}
                                     className="p-1 px-2 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-700"
                                   >
                                     Aprovar
                                   </button>
                                   <button
-                                    onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.REJECTED)}
+                                    onClick={() => handleUpdateSheetStatus(sheet.id, RequestStatus.REJECTED)}
                                     className="p-1 px-2 text-[10px] font-bold bg-white text-red-600 border border-red-200 rounded hover:bg-red-50"
                                   >
                                     Rejeitar
@@ -495,7 +557,7 @@ export const Requisitions = () => {
                               )}
                               {sheet.status === RequestStatus.APPROVED && (isAdminOrGM || isSourceManager) && (
                                 <button
-                                  onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.IN_TRANSIT)}
+                                  onClick={() => handleUpdateSheetStatus(sheet.id, RequestStatus.IN_TRANSIT)}
                                   className="p-1 px-2 text-[10px] font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700 flex items-center gap-1"
                                 >
                                   <Truck size={10} /> Despachar
@@ -503,7 +565,7 @@ export const Requisitions = () => {
                               )}
                               {sheet.status === RequestStatus.IN_TRANSIT && (isAdminOrGM || isTargetManager) && (
                                 <button
-                                  onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.DELIVERED)}
+                                  onClick={() => handleUpdateSheetStatus(sheet.id, RequestStatus.DELIVERED)}
                                   className="p-1 px-2 text-[10px] font-bold bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-1"
                                 >
                                   <Truck size={10} /> Registrar Chegada
@@ -511,7 +573,7 @@ export const Requisitions = () => {
                               )}
                               {sheet.status === RequestStatus.DELIVERED && (isAdminOrGM || isTargetManager) && (
                                 <button
-                                  onClick={() => updateRequisitionSheetStatus(sheet.id, RequestStatus.CONFIRMED)}
+                                  onClick={() => handleUpdateSheetStatus(sheet.id, RequestStatus.CONFIRMED)}
                                   className="p-1 px-2 text-[10px] font-bold bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"
                                 >
                                   <PackageCheck size={10} /> Aceitar
@@ -542,7 +604,7 @@ export const Requisitions = () => {
                                           type="checkbox"
                                           aria-label={`Marcar ${item.itemName} como entregue`}
                                           checked={item.isDelivered}
-                                          onChange={(e) => updateRequisitionSheetItemDelivery(item.id, e.target.checked)}
+                                          onChange={(e) => handleUpdateSheetItemDelivery(item.id, e.target.checked)}
                                           className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                           disabled={sheet.status === RequestStatus.CONFIRMED}
                                         />

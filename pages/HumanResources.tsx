@@ -9,12 +9,13 @@ import {
 } from 'lucide-react';
 
 export const HumanResources = () => {
-    const { allUsers, locations, addUser, updateUser, deleteUser, performanceRecords, payrollParams, updatePayrollParams, isAdminOrGM } = useLogistics();
+    const { allUsers, locations, addUser, updateUser, deleteUser, performanceRecords, savePerformanceRecord, payrollParams, updatePayrollParams, isAdminOrGM, createFicha, items, inventory, fichasIndividuais } = useLogistics();
     const [searchTerm, setSearchTerm] = useState('');
+    const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
 
     // Modal State
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
-    const [activeModalTab, setActiveModalTab] = useState<'summary' | 'history' | 'daily' | 'financial' | 'settings' | 'fichas'>('summary');
+    const [activeModalTab, setActiveModalTab] = useState<'summary' | 'history' | 'daily' | 'financial' | 'settings' | 'fichas' | 'entregas'>('summary');
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
@@ -36,6 +37,15 @@ export const HumanResources = () => {
     // Settings Form State (Inside Modal)
     const [settingsData, setSettingsData] = useState<Partial<User>>({});
 
+    // Daily Tab Form State
+    const [newRecordData, setNewRecordData] = useState({
+        date: new Date().toISOString().split('T')[0],
+        status: AttendanceStatus.FULL_DAY,
+        production: 0,
+        notes: ''
+    });
+    const [isAddingRecord, setIsAddingRecord] = useState(false);
+
     const filteredUsers = allUsers.filter((u: User) =>
         u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -44,7 +54,7 @@ export const HumanResources = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.locationId) {
-            alert("Selecione um departamento/localização.");
+            setStatus({ type: 'info', message: 'Selecione um departamento/localização.' });
             return;
         }
 
@@ -65,7 +75,8 @@ export const HumanResources = () => {
 
             await addUser(newUserPayload);
 
-            alert('Funcionário adicionado com sucesso!');
+            setStatus({ type: 'success', message: 'Funcionário adicionado com sucesso!' });
+            setTimeout(() => setStatus(null), 3000);
 
             // Reset form
             setFormData({
@@ -82,9 +93,7 @@ export const HumanResources = () => {
                 bonusPerUnit: 10
             });
         } catch (error) {
-            console.error("Erro ao adicionar funcionário:", error);
-            const message = error instanceof Error ? error.message : String(error);
-            alert(`Erro ao adicionar funcionário: ${message}`);
+            setStatus({ type: 'error', message: `Erro ao adicionar funcionário: ${error instanceof Error ? error.message : String(error)}` });
         }
     };
 
@@ -100,6 +109,10 @@ export const HumanResources = () => {
             role: user.role,
             jobTitle: user.jobTitle
         });
+
+        // Setup initial production goal for Daily Record form
+        setNewRecordData(prev => ({ ...prev, production: user.defaultDailyGoal || 0 }));
+        setIsAddingRecord(false);
     };
 
     const handleSaveSettings = () => {
@@ -108,7 +121,8 @@ export const HumanResources = () => {
             const updated = { ...selectedUser, ...settingsData };
             updateUser(updated);
             setSelectedUser(updated); // Update local modal state
-            alert("Configurações atualizadas com sucesso!");
+            setStatus({ type: 'success', message: 'Configurações atualizadas com sucesso!' });
+            setTimeout(() => setStatus(null), 3000);
         }
     };
 
@@ -126,6 +140,21 @@ export const HumanResources = () => {
     };
 
     // --- MODAL COMPONENTS ---
+
+    // --- DELIVERY HISTORY STATE ---
+    const [deliveryHistory, setDeliveryHistory] = React.useState<any[]>([]);
+    const [loadingDeliveries, setLoadingDeliveries] = React.useState(false);
+    React.useEffect(() => {
+        if (selectedUser && activeModalTab === 'entregas') {
+            setLoadingDeliveries(true);
+            import('../services/employeeDeliveryService').then(({ getEmployeeDeliveries }) => {
+                getEmployeeDeliveries(selectedUser.id)
+                    .then(setDeliveryHistory)
+                    .catch(() => setDeliveryHistory([]))
+                    .finally(() => setLoadingDeliveries(false));
+            });
+        }
+    }, [selectedUser, activeModalTab]);
 
     const renderModalContent = () => {
         if (!selectedUser) return null;
@@ -243,25 +272,17 @@ export const HumanResources = () => {
                                 <th className="px-4 py-3 text-center">Status</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {months.map(m => {
-                                const data = history[m];
-                                const effDays = data.d + (data.h * 0.5);
-                                const mTarget = effDays * (selectedUser.defaultDailyGoal || 0);
-                                const eff = mTarget > 0 ? (data.prod / mTarget) * 100 : 0;
-                                const isPast = m < currentMonth;
-
+                        <tbody>
+                            {months.map(month => {
+                                const h = history[month];
+                                const isPast = true; // logic could check against current month
                                 return (
-                                    <tr key={m} className="hover:bg-slate-50">
-                                        <td className="px-4 py-3 font-medium text-gray-800">{m}</td>
-                                        <td className="px-4 py-3 text-center text-gray-600">{data.d} <span className="text-xs text-gray-400">({data.h})</span></td>
-                                        <td className="px-4 py-3 text-center text-red-500 font-bold">{data.f}</td>
-                                        <td className="px-4 py-3 text-right font-medium">{data.prod}</td>
-                                        <td className="px-4 py-3 text-right">
-                                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${eff >= 100 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                                {eff.toFixed(0)}%
-                                            </span>
-                                        </td>
+                                    <tr key={month} className="border-b border-gray-100 hover:bg-gray-50">
+                                        <td className="px-4 py-3 font-medium">{month}</td>
+                                        <td className="px-4 py-3 text-center">{h.d}</td>
+                                        <td className="px-4 py-3 text-center">{h.f}</td>
+                                        <td className="px-4 py-3 text-right">{h.prod.toFixed(0)}</td>
+                                        <td className="px-4 py-3 text-right">{((h.prod / (h.d + h.h + h.f)) || 0).toFixed(1)} un/dia</td>
                                         <td className="px-4 py-3 text-center">
                                             {isPast ? <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">Fechado</span> : <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">Aberto</span>}
                                         </td>
@@ -276,100 +297,304 @@ export const HumanResources = () => {
 
         // --- TAB: DAILY ---
         if (activeModalTab === 'daily') {
-            const sortedRecords = [...userRecords].sort((a, b) => b.date.localeCompare(a.date));
+            const sortedRecords = [...userRecords].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+            const handleAddDailyRecord = async () => {
+                if (!selectedUser) return;
+                try {
+                    await savePerformanceRecord({
+                        id: crypto.randomUUID(), // Temp ID
+                        workerId: selectedUser.id,
+                        date: newRecordData.date,
+                        status: newRecordData.status,
+                        production: Number(newRecordData.production),
+                        notes: newRecordData.notes
+                    });
+                    setStatus({ type: 'success', message: 'Registo diário salvo com sucesso!' });
+                    setIsAddingRecord(false);
+                    setTimeout(() => setStatus(null), 3000);
+                } catch (e: any) {
+                    setStatus({ type: 'error', message: `Erro ao salvar: ${e.message}` });
+                }
+            };
             return (
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
-                    {sortedRecords.map(r => (
-                        <div key={r.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg shadow-sm hover:border-blue-200 transition">
-                            <div className="flex items-center gap-3">
-                                <div className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded border border-gray-200">
-                                    {formatFlexibleDate(r.date, { dateOnly: true })}
+                <div className="space-y-4">
+                    <div className="flex justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <div>
+                            <h4 className="font-bold text-blue-800">Registo Diário</h4>
+                            <p className="text-xs text-blue-600">Histórico de presenças e produção de {selectedUser.name}</p>
+                        </div>
+                        <button
+                            onClick={() => setIsAddingRecord(!isAddingRecord)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 px-3 rounded text-sm flex items-center gap-1 transition-colors"
+                        >
+                            {isAddingRecord ? <X size={16} /> : <Plus size={16} />}
+                            {isAddingRecord ? 'Cancelar' : 'Novo Registo'}
+                        </button>
+                    </div>
+
+                    {isAddingRecord && (
+                        <div className="bg-white border text-sm border-blue-200 p-4 rounded-xl shadow-sm mb-4">
+                            <h5 className="font-bold text-gray-700 mb-3">Lançar Registo ({formatFlexibleDate(newRecordData.date)})</h5>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Data</label>
+                                    <input type="date" className="w-full border rounded p-2" value={newRecordData.date} onChange={e => setNewRecordData({ ...newRecordData, date: e.target.value })} />
                                 </div>
-                                <div className={`text-xs font-bold px-2 py-0.5 rounded uppercase w-10 text-center ${r.status === 'D' ? 'bg-green-100 text-green-700' :
-                                    r.status === 'D/2' ? 'bg-orange-100 text-orange-700' :
-                                        'bg-red-100 text-red-700'
-                                    }`}>
-                                    {r.status}
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Presença</label>
+                                    <select className="w-full border rounded p-2" value={newRecordData.status} onChange={e => setNewRecordData({ ...newRecordData, status: e.target.value as AttendanceStatus })}>
+                                        <option value={AttendanceStatus.FULL_DAY}>Dia Completo (D)</option>
+                                        <option value={AttendanceStatus.HALF_DAY}>Meio Dia (D/2)</option>
+                                        <option value={AttendanceStatus.ABSENT}>Falta (F)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Produção (un)</label>
+                                    <input type="number" className="w-full border rounded p-2" value={newRecordData.production} onChange={e => setNewRecordData({ ...newRecordData, production: Number(e.target.value) })} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">Notas</label>
+                                    <input type="text" className="w-full border rounded p-2 placeholder-gray-300" placeholder="Opcional" value={newRecordData.notes} onChange={e => setNewRecordData({ ...newRecordData, notes: e.target.value })} />
                                 </div>
                             </div>
-                            <div className="flex items-center gap-6">
-                                <div className="text-sm">
-                                    <span className="text-gray-400 text-xs mr-2">PRODUÇÃO</span>
-                                    <span className="font-bold text-gray-800">{r.production}</span>
-                                </div>
-                                {r.notes && (
-                                    <div className="text-xs text-gray-500 italic max-w-[150px] truncate" title={r.notes}>
-                                        "{r.notes}"
-                                    </div>
-                                )}
+                            <div className="flex justify-end">
+                                <button onClick={handleAddDailyRecord} className="bg-blue-600 text-white font-medium px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700">
+                                    <Save size={16} /> Salvar Registo
+                                </button>
                             </div>
                         </div>
-                    ))}
+                    )}
+
+                    <div className="space-y-2 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+                        {sortedRecords.length === 0 ? (
+                            <p className="text-gray-400 text-sm text-center py-4">Nenhum registo diário encontrado.</p>
+                        ) : sortedRecords.map(r => (
+                            <div key={r.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-lg shadow-sm hover:border-blue-200 transition">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded border border-gray-200">
+                                        {formatFlexibleDate(r.date, { dateOnly: true })}
+                                    </div>
+                                    <div className={`text-xs font-bold px-2 py-0.5 rounded uppercase w-10 text-center ${r.status === 'D' ? 'bg-green-100 text-green-700' :
+                                        r.status === 'D/2' ? 'bg-orange-100 text-orange-700' :
+                                            'bg-red-100 text-red-700'
+                                        }`}>
+                                        {r.status}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-6">
+                                    <div className="text-sm">
+                                        <span className="text-gray-400 text-xs mr-2">PRODUÇÃO</span>
+                                        <span className="font-bold text-gray-800">{r.production}</span>
+                                    </div>
+                                    {r.notes && (
+                                        <div className="text-xs text-gray-500 italic max-w-[150px] truncate" title={r.notes}>
+                                            "{r.notes}"
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             );
         }
 
         // --- TAB: FINANCIAL ---
         if (activeModalTab === 'financial') {
-            // Mock financial history based on months
             const history: string[] = [];
             userRecords.forEach(r => {
                 const month = r.date.slice(0, 7);
                 if (!history.includes(month)) history.push(month);
             });
             history.sort().reverse();
+            if (!history.includes(currentMonth)) history.unshift(currentMonth);
 
             return (
-                <div className="space-y-3">
-                    {history.map(m => {
-                        const isCurrent = m === currentMonth;
-                        return (
-                            <div key={m} className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isCurrent ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
-                                        <DollarSign size={20} />
+                <div className="space-y-4">
+                    <div className="bg-green-50 p-4 rounded-xl border border-green-100 flex items-start gap-3">
+                        <DollarSign className="text-green-600 mt-1" size={20} />
+                        <div>
+                            <h5 className="font-bold text-green-800">Histórico de Fechos Salariais</h5>
+                            <p className="text-sm text-green-700 mt-1">
+                                Para cada mês em que o funcionário teve actividade registada, é apresentado o valor estimado do salário considerando dias trabalhados, faltas e produção.
+                            </p>
+                        </div>
+                    </div>
+                    {history.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-6">Nenhuma informação financeira disponível para este funcionário.</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {history.map(m => {
+                                const isCurrent = m === currentMonth;
+                                const mRecords = userRecords.filter(r => r.date.startsWith(m));
+                                const mFullDays = mRecords.filter(r => r.status === AttendanceStatus.FULL_DAY).length;
+                                const mHalfDays = mRecords.filter(r => r.status === AttendanceStatus.HALF_DAY).length;
+                                const mAbsences = mRecords.filter(r => r.status === AttendanceStatus.ABSENT).length;
+                                const mProduction = mRecords.reduce((acc, curr) => acc + (curr.production || 0), 0);
+                                const mEffectiveDays = mFullDays + (mHalfDays * 0.5);
+                                const mTarget = mEffectiveDays * (selectedUser.defaultDailyGoal || 0);
+
+                                const mBase = (mFullDays * (selectedUser.dailyRate || 0)) + (mHalfDays * (selectedUser.halfDayRate || 0));
+                                const mBonus = Math.max(0, mProduction - mTarget) * (selectedUser.bonusPerUnit || 0);
+                                const mPenalty = mAbsences * (selectedUser.absencePenalty || 0);
+                                const mNet = mBase + mBonus - mPenalty;
+
+                                return (
+                                    <div key={m} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-white border border-gray-200 rounded-xl shadow-sm gap-4">
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${isCurrent ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
+                                                <DollarSign size={20} />
+                                            </div>
+                                            <div>
+                                                <h5 className="font-bold text-gray-800">Mês: {m}</h5>
+                                                <p className="text-xs text-gray-500">{isCurrent ? 'Mês em curso (Aberto)' : 'Mês Fechado'}</p>
+                                                <div className="text-xs text-gray-500 flex gap-2 mt-1">
+                                                    <span>Base: {mBase.toFixed(2)}MT</span>
+                                                    <span>Bónus: {mBonus.toFixed(2)}MT</span>
+                                                    <span className="text-red-500">Desc: -{mPenalty.toFixed(2)}MT</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col sm:items-end gap-2 w-full sm:w-auto">
+                                            <div className="text-sm font-bold text-gray-900 border px-3 py-1 rounded bg-gray-50">
+                                                Total Estimado: <span className="text-green-700">{mNet.toFixed(2)} MT</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 self-end">
+                                                <span className={`px-2 py-1 rounded-sm text-[10px] uppercase font-bold ${isCurrent ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                                                    {isCurrent ? 'Pendente' : 'Processado'}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h5 className="font-bold text-gray-800">Salário {m}</h5>
-                                        <p className="text-xs text-gray-500">{isCurrent ? 'Em processamento' : 'Processado e Fechado'}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${isCurrent ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
-                                        {isCurrent ? 'Pendente' : 'Pago'}
-                                    </span>
-                                    <button className="text-gray-400 hover:text-blue-600" title="Ver recibo">
-                                        <FileText size={18} />
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             );
         }
 
-        // --- TAB: FICHAS (ENTREGAS) ---
-        if (activeModalTab === 'fichas') {
-            const { fichasIndividuais, createFicha, items, inventory } = useLogistics();
-            const userFichas = fichasIndividuais.filter(f => f.entidade_id === selectedUser.id);
-            const [isLocalModalOpen, setIsLocalModalOpen] = useState(false);
+        // --- TAB: SETTINGS ---
+        if (activeModalTab === 'settings') {
+            return (
+                <div className="space-y-6">
+                    <div className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <div>
+                            <h4 className="font-bold text-gray-800">Parametrização do Funcionário</h4>
+                            <p className="text-xs text-gray-500">Defina o cargo, taxas de remuneração diária, metas e penalizações por faltas para este operário.</p>
+                        </div>
+                    </div>
 
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+
+                        <div className="col-span-1 md:col-span-2">
+                            <h5 className="font-semibold text-gray-700 mb-3 border-b pb-2 text-sm uppercase tracking-wide">Informação Geral</h5>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Cargo / Função</label>
+                                    <input
+                                        type="text"
+                                        value={settingsData.jobTitle || ''}
+                                        onChange={e => setSettingsData(prev => ({ ...prev, jobTitle: e.target.value }))}
+                                        className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nível de Acesso (Papel)</label>
+                                    <select
+                                        value={settingsData.role || Role.WORKER}
+                                        onChange={e => setSettingsData(prev => ({ ...prev, role: e.target.value as Role }))}
+                                        className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                                        disabled={!isAdminOrGM}
+                                    >
+                                        <option value={Role.WORKER}>Operário</option>
+                                        <option value={Role.MANAGER}>Gerente</option>
+                                        <option value={Role.GENERAL_MANAGER}>Diretor Geral</option>
+                                        <option value={Role.ADMIN}>Administrador</option>
+                                    </select>
+                                    {!isAdminOrGM && <p className="text-[10px] text-gray-400 mt-1">Apenas Admins podem alterar o papel.</p>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="col-span-1 md:col-span-2">
+                            <h5 className="font-semibold text-gray-700 mb-3 border-b pb-2 text-sm uppercase tracking-wide mt-4">Remuneração e Metas</h5>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Taxa Dia Completo (MT)</label>
+                                    <input
+                                        type="number" step="0.5"
+                                        value={settingsData.dailyRate || 0}
+                                        onChange={e => setSettingsData(prev => ({ ...prev, dailyRate: parseFloat(e.target.value) }))}
+                                        className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Taxa Meio Dia (MT)</label>
+                                    <input
+                                        type="number" step="0.5"
+                                        value={settingsData.halfDayRate || 0}
+                                        onChange={e => setSettingsData(prev => ({ ...prev, halfDayRate: parseFloat(e.target.value) }))}
+                                        className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 text-red-600">Penalização Falta (MT)</label>
+                                    <input
+                                        type="number" step="0.5"
+                                        value={settingsData.absencePenalty || 0}
+                                        onChange={e => setSettingsData(prev => ({ ...prev, absencePenalty: parseFloat(e.target.value) }))}
+                                        className="w-full border rounded border-red-200 p-2 focus:ring-2 focus:ring-red-500 outline-none font-medium"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Meta Produção Diária (un)</label>
+                                    <input
+                                        type="number" step="1"
+                                        value={settingsData.defaultDailyGoal || 0}
+                                        onChange={e => setSettingsData(prev => ({ ...prev, defaultDailyGoal: parseFloat(e.target.value) }))}
+                                        className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-blue-700 mb-1">Bónus por Unid Extra (MT)</label>
+                                    <input
+                                        type="number" step="0.5"
+                                        value={settingsData.bonusPerUnit || 0}
+                                        onChange={e => setSettingsData(prev => ({ ...prev, bonusPerUnit: parseFloat(e.target.value) }))}
+                                        className="w-full border rounded border-blue-200 p-2 focus:ring-2 focus:ring-blue-500 outline-none font-medium text-blue-800"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="col-span-1 md:col-span-2 pt-4 flex justify-end">
+                            <button
+                                onClick={handleSaveSettings}
+                                disabled={!isAdminOrGM}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <Save size={18} />
+                                Salvar Configurações
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+
+        // --- TAB: ENTREGAS (CENTRALIZADO) ---
+        if (activeModalTab === 'entregas') {
             return (
                 <div className="space-y-4">
                     <div className="flex justify-between items-center bg-emerald-50 p-4 rounded-xl border border-emerald-100">
                         <div>
-                            <h4 className="font-bold text-emerald-800">Carga Individual / Ferramentas</h4>
-                            <p className="text-xs text-emerald-600">Histórico de materiais e EPIs entregues ao funcionário.</p>
+                            <h4 className="font-bold text-emerald-800">Histórico de Entregas de Materiais</h4>
+                            <p className="text-xs text-emerald-600">Todas as entregas de materiais, EPIs e ferramentas registradas para este funcionário.</p>
                         </div>
-                        <button
-                            onClick={() => setIsLocalModalOpen(true)}
-                            className="bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition flex items-center gap-2 text-sm font-bold shadow-sm"
-                        >
-                            <Plus size={16} /> Nova Entrega
-                        </button>
                     </div>
-
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm">
                             <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
@@ -377,63 +602,131 @@ export const HumanResources = () => {
                                     <th className="px-4 py-3">Data</th>
                                     <th className="px-4 py-3">Produto</th>
                                     <th className="px-4 py-3 text-center">Qtd</th>
-                                    <th className="px-4 py-3 text-center">Tipo</th>
-                                    <th className="px-4 py-3 text-center">Estado</th>
+                                    <th className="px-4 py-3 text-center">Unidade</th>
+                                    <th className="px-4 py-3 text-center">Origem</th>
+                                    <th className="px-4 py-3 text-center">Observações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {userFichas.length === 0 ? (
-                                    <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">Nenhuma entrega registrada.</td></tr>
+                                {loadingDeliveries ? (
+                                    <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">Carregando entregas...</td></tr>
+                                ) : deliveryHistory.length === 0 ? (
+                                    <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">Nenhuma entrega registrada.</td></tr>
                                 ) : (
-                                    userFichas.map(f => (
-                                        <tr key={f.id} className="hover:bg-gray-50">
-                                            <td className="px-4 py-3 text-gray-600">{formatFlexibleDate(f.data, { dateOnly: true })}</td>
-                                            <td className="px-4 py-3 font-medium text-gray-800">{f.produto}</td>
-                                            <td className="px-4 py-3 text-center font-bold text-emerald-600">{f.quantidade} {f.unidade}</td>
+                                    deliveryHistory.map((d: any) => (
+                                        <tr key={d.id} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3 text-gray-600">{d.delivery_date ? formatFlexibleDate(d.delivery_date, { dateOnly: true }) : '-'}</td>
+                                            <td className="px-4 py-3 font-medium text-gray-800">{d.item_name}</td>
+                                            <td className="px-4 py-3 text-center font-bold text-emerald-600">{d.quantity}</td>
+                                            <td className="px-4 py-3 text-center">{d.unit}</td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-600 uppercase font-bold tracking-tighter">{f.tipo}</span>
+                                                <span className="text-[10px] px-2 py-0.5 rounded bg-gray-100 text-gray-600 uppercase font-bold tracking-tighter">{d.origin}</span>
                                             </td>
-                                            <td className="px-4 py-3 text-center">
-                                                <span className={`px-2 py-0.5 rounded-[4px] text-[10px] font-bold ${f.estado === 'confirmado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                    {f.estado.toUpperCase()}
-                                                </span>
-                                            </td>
+                                            <td className="px-4 py-3 text-center text-xs text-gray-500">{d.notes || '-'}</td>
                                         </tr>
                                     ))
                                 )}
                             </tbody>
                         </table>
                     </div>
+                </div>
+            );
+        }
 
-                    {isLocalModalOpen && (
-                        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-200">
-                                <div className="bg-emerald-600 p-6 text-white flex justify-between items-center">
-                                    <h3 className="text-xl font-bold">Nova Entrega para {selectedUser.name}</h3>
-                                    <button type="button" onClick={() => setIsLocalModalOpen(false)} title="Fechar modal" aria-label="Fechar" className="hover:bg-white/10 p-1 rounded-full"><X size={24} /></button>
-                                </div>
-                                <div className="p-6">
-                                    {/* Simple Inline Form */}
-                                    <FichaQuickForm
-                                        userId={selectedUser.id}
-                                        items={items}
-                                        inventory={inventory}
-                                        onSave={async (data: Omit<FichaIndividual, "id" | "codigo" | "created_at" | "updated_at">) => {
-                                            await createFicha(data);
-                                            setIsLocalModalOpen(false);
-                                        }}
-                                        onCancel={() => setIsLocalModalOpen(false)}
-                                    />
-                                </div>
-                            </div>
+        // --- TAB: FICHAS INDIVIDUAIS ---
+        if (activeModalTab === 'fichas') {
+            const userFichas = fichasIndividuais.filter(f => f.entidade_id === selectedUser.id).sort((a, b) => (b.data || '').localeCompare(a.data));
+
+            const handleSaveFicha = async (data: any) => {
+                try {
+                    await createFicha({
+                        tipo: data.tipo,
+                        entidade_id: selectedUser.id,
+                        entidade_tipo: 'trabalhador',
+                        data: data.data,
+                        produto_id: data.produto_id || null,
+                        produto: data.produto || data.produto_name || '',
+                        quantidade: Number(data.quantidade) || 0,
+                        unidade: data.unidade || 'Unidade',
+                        observacoes: data.observacoes || '',
+                        usuario_registou: '',
+                        estado: 'pendente'
+                    });
+                    setStatus({ type: 'success', message: 'Ficha registada com sucesso.' });
+                    setTimeout(() => setStatus(null), 3000);
+                } catch (e: any) {
+                    setStatus({ type: 'error', message: `Erro ao registar ficha: ${e?.message || String(e)}` });
+                }
+            };
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h4 className="font-bold text-gray-800">Fichas de Entrega — {selectedUser.name}</h4>
+                            <p className="text-sm text-gray-500">Registos de entregas e requisições associadas ao funcionário.</p>
                         </div>
-                    )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 bg-white p-4 rounded-xl border border-gray-100">
+                            <h5 className="font-semibold text-gray-700 mb-3">Histórico de Fichas</h5>
+                            {userFichas.length === 0 ? (
+                                <div className="text-sm text-gray-400">Nenhuma ficha registada para este funcionário.</div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
+                                            <tr>
+                                                <th className="px-3 py-2">Data</th>
+                                                <th className="px-3 py-2">Tipo</th>
+                                                <th className="px-3 py-2">Produto</th>
+                                                <th className="px-3 py-2 text-center">Qtd</th>
+                                                <th className="px-3 py-2">Observações</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {userFichas.map(f => (
+                                                <tr key={f.id} className="hover:bg-gray-50">
+                                                    <td className="px-3 py-2 text-gray-600">{f.data}</td>
+                                                    <td className="px-3 py-2 font-medium text-gray-800">{f.tipo}</td>
+                                                    <td className="px-3 py-2">{(f as any).produto_name || f.produto}</td>
+                                                    <td className="px-3 py-2 text-center font-bold text-emerald-600">{f.quantidade}</td>
+                                                    <td className="px-3 py-2 text-sm text-gray-500">{f.observacoes || '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-white p-4 rounded-xl border border-gray-100 lg:col-span-1">
+                            <h5 className="font-semibold text-gray-700 mb-3">Registar Nova Ficha</h5>
+                            <FichaQuickForm
+                                userId={selectedUser.id}
+                                items={items}
+                                inventory={inventory}
+                                onSave={handleSaveFicha}
+                                onCancel={() => {/* noop: keep modal open */ }}
+                            />
+                        </div>
+                    </div>
                 </div>
             );
         }
 
         return null;
     };
+
+    // --- TABS: Add 'Entregas' tab ---
+    const modalTabs = [
+        { key: 'summary', label: 'Resumo' },
+        { key: 'history', label: 'Histórico' },
+        { key: 'daily', label: 'Diário' },
+        { key: 'financial', label: 'Financeiro' },
+        { key: 'entregas', label: 'Entregas' },
+    ];
 
     return (
         <div className="space-y-6">
@@ -443,6 +736,15 @@ export const HumanResources = () => {
                     <p className="text-sm text-gray-500">Gestão de pessoal, cadastro e configuração de salários.</p>
                 </div>
             </div>
+
+            {status && (
+                <div className={`p-3 rounded text-sm ${status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+                    status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' :
+                        'bg-blue-50 border border-blue-100 text-blue-800'
+                    }`}>
+                    {status.message}
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Registration Form */}

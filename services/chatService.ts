@@ -91,17 +91,40 @@ export const chatService = {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
-    const { data, error } = await supabase
-      .from('chat_groups')
-      .select(`
-        *,
-        chat_group_members!inner(user_id),
-        chat_messages(created_at)
-      `)
-      .order('created_at', { ascending: false });
+    try {
+      // Get group members first to find groups for the current user
+      const { data: memberData, error: memberError } = await supabase
+        .from('chat_group_members')
+        .select('group_id')
+        .eq('user_id', user.id);
 
-    if (error) throw error;
-    return data;
+      if (memberError) throw memberError;
+
+      if (!memberData || memberData.length === 0) {
+        return [];
+      }
+
+      const groupIds = memberData.map(m => m.group_id);
+
+      // Now fetch the full group data with members and latest message timestamps
+      const { data, error } = await supabase
+        .from('chat_groups')
+        .select(`
+          *,
+          chat_group_members(*),
+          chat_messages(created_at)
+        `)
+        .in('id', groupIds)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      // Return empty list on server errors to let UI show a friendly message
+      // while logging the error for diagnostics.
+      console.error('Error fetching user chat groups:', err);
+      return [];
+    }
   },
 
   /**
@@ -323,23 +346,21 @@ export const chatService = {
   /**
    * Validate file before upload
    */
+
   async validateFileUpload(file: File, groupId: string) {
-    const response = await fetch('/functions/v1/validate-chat-file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const { data, error } = await supabase.functions.invoke('validate-chat-file', {
+      body: {
         fileSize: file.size,
         mimeType: file.type,
         groupId,
-      }),
+      },
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'File validation failed');
+    if (error) {
+      throw new Error(error.message || 'Falha na validação do ficheiro');
     }
 
-    return await response.json();
+    return data;
   },
 
   /**
@@ -352,7 +373,7 @@ export const chatService = {
     // Upload to storage
     const path = `${groupId}/${messageId}/${file.name}`;
     const { data, error: uploadError } = await supabase.storage
-      .from('chat-files')
+      .from('chat-attachments')
       .upload(path, file);
 
     if (uploadError) throw uploadError;
@@ -366,7 +387,7 @@ export const chatService = {
       .insert({
         message_id: messageId,
         file_name: file.name,
-        file_url: `${supabaseUrl}/storage/v1/object/public/chat-files/${path}`,
+        file_url: `${supabaseUrl}/storage/v1/object/public/chat-attachments/${path}`,
         file_size: file.size,
         mime_type: file.type,
         storage_path: path,
@@ -385,7 +406,7 @@ export const chatService = {
    */
   async getFileDownloadUrl(storagePath: string, expiresIn: number = 900) {
     const { data, error } = await supabase.storage
-      .from('chat-files')
+      .from('chat-attachments')
       .createSignedUrl(storagePath, expiresIn);
 
     if (error) throw error;

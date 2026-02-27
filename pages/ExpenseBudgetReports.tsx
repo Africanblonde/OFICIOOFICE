@@ -37,6 +37,7 @@ export default function ExpenseBudgetReports() {
   const { currentUser, selectedDepartmentId } = useLogistics();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'details' | 'analysis'>('overview');
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
 
   // Data
   const [budgetSummaries, setBudgetSummaries] = useState<ExpenseBudgetSummary[]>([]);
@@ -86,7 +87,7 @@ export default function ExpenseBudgetReports() {
       setTotalSpent(spentTotal);
       setTotalApprovalPending(pendingTotal);
     } catch (err) {
-      console.error('Error loading report data:', err);
+      setStatus({ type: 'error', message: `Error loading report data: ${err instanceof Error ? err.message : String(err)}` });
     } finally {
       setLoading(false);
     }
@@ -99,10 +100,10 @@ export default function ExpenseBudgetReports() {
         downloadFile(csvContent, 'expenses-report.csv', 'text/csv');
       } else if (format === 'pdf') {
         // TODO: Implement PDF export (requires jsPDF or similar)
-        alert('Exportação em PDF em desenvolvimento');
+        setStatus({ type: 'info', message: 'Exportação em PDF em desenvolvimento' });
       }
     } catch (err) {
-      console.error('Error exporting report:', err);
+      setStatus({ type: 'error', message: `Error exporting report: ${err instanceof Error ? err.message : String(err)}` });
     }
   };
 
@@ -178,6 +179,16 @@ export default function ExpenseBudgetReports() {
         </p>
       </div>
 
+      {status && (
+        <div className={`p-3 rounded text-sm mb-6 ${
+          status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+          status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' :
+          'bg-blue-50 border border-blue-100 text-blue-800'
+        }`}>
+          {status.message}
+        </div>
+      )}
+
       {/* FILTERS */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <div className="flex items-center gap-2 mb-4">
@@ -196,6 +207,7 @@ export default function ExpenseBudgetReports() {
               onChange={(e) =>
                 setFilters({ ...filters, startDate: e.target.value })
               }
+              aria-label="Data Inicial"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
             />
           </div>
@@ -210,6 +222,7 @@ export default function ExpenseBudgetReports() {
               onChange={(e) =>
                 setFilters({ ...filters, endDate: e.target.value })
               }
+              aria-label="Data Final"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
             />
           </div>
@@ -226,6 +239,7 @@ export default function ExpenseBudgetReports() {
                   costCenterId: e.target.value || undefined,
                 })
               }
+              aria-label="Centro de Custo"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
             >
               <option value="">Todos</option>

@@ -35,6 +35,7 @@ export default function ExpenseApprovals() {
   const { currentUser, selectedDepartmentId } = useLogistics();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'pending' | 'budgets'>('pending');
+  const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
 
   // Pending approvals
   const [pendingExpenses, setPendingExpenses] = useState<PendingExpenseApproval[]>([]);
@@ -64,7 +65,7 @@ export default function ExpenseApprovals() {
       setPendingExpenses(pendingData);
       setBudgetSummaries(budgetData);
     } catch (err) {
-      console.error('Error loading expense data:', err);
+      setStatus({ type: 'error', message: `Error loading expense data: ${err instanceof Error ? err.message : String(err)}` });
     } finally {
       setLoading(false);
     }
@@ -90,7 +91,7 @@ export default function ExpenseApprovals() {
 
       setShowDetailModal(true);
     } catch (err) {
-      console.error('Error loading expense details:', err);
+      setStatus({ type: 'error', message: `Error loading expense details: ${err instanceof Error ? err.message : String(err)}` });
     }
   };
 
@@ -104,14 +105,14 @@ export default function ExpenseApprovals() {
       setSelectedExpense(null);
       setRejectionReason('');
     } catch (err) {
-      console.error('Error approving expense:', err);
-      alert('Erro ao aprovar despesa');
+      setStatus({ type: 'error', message: `Error approving expense: ${err instanceof Error ? err.message : String(err)}` });
     }
   };
 
   const handleReject = async () => {
     if (!selectedExpense || !rejectionReason.trim()) {
       alert('Por favor, forneça uma razão para a rejeição');
+      setStatus({ type: 'info', message: 'Por favor, forneça uma razão para a rejeição' });
       return;
     }
 
@@ -121,9 +122,8 @@ export default function ExpenseApprovals() {
       setShowDetailModal(false);
       setSelectedExpense(null);
       setRejectionReason('');
-    } catch (err) {
-      console.error('Error rejecting expense:', err);
-      alert('Erro ao rejeitar despesa');
+    } catch (err: any) {
+      setStatus({ type: 'error', message: `Error rejecting expense: ${err instanceof Error ? err.message : String(err)}` });
     }
   };
 
@@ -161,9 +161,21 @@ export default function ExpenseApprovals() {
         </p>
       </div>
 
+      {/* STATUS MESSAGE */}
+      {status && (
+        <div className={`p-3 rounded text-sm mb-6 ${
+          status.type === 'success' ? 'bg-green-100 border border-green-300 text-green-800' :
+          status.type === 'error' ? 'bg-red-100 border border-red-300 text-red-800' :
+          'bg-blue-50 border border-blue-100 text-blue-800'
+        }`}>
+          {status.message}
+        </div>
+      )}
+
       {/* TABS */}
       <div className="bg-white rounded-lg shadow-md mb-6">
-        <div className="flex border-b border-slate-200">
+
+      <div className="flex border-b border-slate-200">
           {(['pending', 'budgets'] as const).map((tab) => (
             <button
               key={tab}

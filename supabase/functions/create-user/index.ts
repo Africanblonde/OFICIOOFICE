@@ -71,6 +71,7 @@ serve(async (req) => {
             id: userId,
             name: userData.name,
             role: userData.role,
+            email: email, // <-- Addition to save email on the public table
             location_id: userData.locationId ?? null,
             job_title: userData.jobTitle ?? null,
             default_daily_goal: userData.defaultDailyGoal ?? null,
