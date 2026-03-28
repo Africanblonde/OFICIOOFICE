@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 export const HumanResources = () => {
-    const { allUsers, locations, addUser, updateUser, deleteUser, performanceRecords, savePerformanceRecord, payrollParams, updatePayrollParams, isAdminOrGM, createFicha, items, inventory, fichasIndividuais } = useLogistics();
+    const { allUsers, locations, addUser, updateUser, deleteUser, performanceRecords, savePerformanceRecord, payrollParams, updatePayrollParams, isAdminOrGM, createFicha, items, inventory, fichasIndividuais, getItemCategoryName } = useLogistics();
     const [searchTerm, setSearchTerm] = useState('');
     const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
 
@@ -707,6 +707,7 @@ export const HumanResources = () => {
                                 userId={selectedUser.id}
                                 items={items}
                                 inventory={inventory}
+                                getItemCategoryName={getItemCategoryName}
                                 onSave={handleSaveFicha}
                                 onCancel={() => {/* noop: keep modal open */ }}
                             />
@@ -1033,7 +1034,7 @@ export const HumanResources = () => {
 };
 
 // --- QUICK DELIVERY FORM FOR HR ---
-const FichaQuickForm = ({ userId, items, inventory, onSave, onCancel }: any) => {
+const FichaQuickForm = ({ userId, items, inventory, getItemCategoryName, onSave, onCancel }: any) => {
     const [formData, setFormData] = useState({
         tipo: 'ferramentas' as any,
         entidade_id: userId,
@@ -1088,7 +1089,7 @@ const FichaQuickForm = ({ userId, items, inventory, onSave, onCancel }: any) => 
                                 className="w-full text-left p-3 hover:bg-emerald-50 border-b border-gray-50 last:border-0"
                             >
                                 <div className="font-bold text-gray-800 text-sm">{it.name}</div>
-                                <div className="text-[10px] text-gray-500 uppercase">{it.category}</div>
+                                <div className="text-[10px] text-gray-500 uppercase">{getItemCategoryName(it.category)}</div>
                             </button>
                         ))}
                     </div>

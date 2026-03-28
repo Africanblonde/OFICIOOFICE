@@ -20,7 +20,8 @@ export const Inventory: React.FC = () => {
     updateItem,
     allUsers,
     createFicha,
-    categories,
+    itemCategories,
+    getItemCategoryName,
     fichasIndividuais,
     accountingEntries
   } = useLogistics();
@@ -82,18 +83,18 @@ export const Inventory: React.FC = () => {
     return words.map(word => word.charAt(0)).join('').toUpperCase();
   };
 
-  // Função para gerar SKU automático
-  const generateSku = (category: string, locationId: string): string => {
-    if (!category || !locationId) return '';
+  // Função para gerar SKU automático (categoria = nome, alinhado com FK items.category → item_categories.name)
+  const generateSku = (categoryName: string, locationId: string): string => {
+    if (!categoryName || !locationId) return '';
 
     const location = locations.find(l => l.id === locationId);
     if (!location) return '';
 
     const locationAbbrev = generateLocationAbbrev(location.name);
-    const categoryAbbrev = categoryAbbreviations[category] || category.substring(0, 4).toUpperCase();
+    const categoryAbbrev = categoryAbbreviations[categoryName] || categoryName.substring(0, 4).toUpperCase();
 
     // Contar itens existentes nesta categoria
-    const itemsInCategory = items.filter(item => item.category === category);
+    const itemsInCategory = items.filter(item => item.category === categoryName);
     const nextNumber = (itemsInCategory.length + 1).toString().padStart(2, '0');
 
     return `${locationAbbrev}-${categoryAbbrev}-${nextNumber}`;
@@ -162,7 +163,7 @@ export const Inventory: React.FC = () => {
               className="bg-transparent border-none text-sm font-medium text-gray-700 focus:outline-none pr-4 w-full sm:w-auto bg-white text-gray-900"
             >
               <option value="all">Todas as Localizações</option>
-              {locations.filter(loc => loc.type !== 'CENTRAL').map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+              {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
             </select>
           </div>
 
@@ -210,7 +211,7 @@ export const Inventory: React.FC = () => {
               <div>
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex gap-2">
-                    <span className={`text-xs font-bold px-2 py-1 rounded uppercase tracking-wider ${item?.type === ItemType.ASSET ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>{item?.category}</span>
+                    <span className={`text-xs font-bold px-2 py-1 rounded uppercase tracking-wider ${item?.type === ItemType.ASSET ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>{getItemCategoryName(item?.category)}</span>
                     <span className="text-xs font-bold px-2 py-1 bg-gray-50 text-gray-600 rounded uppercase tracking-wider border border-gray-100">{item?.unit}</span>
                   </div>
                   <span className="text-xs text-gray-400">{item?.sku}</span>
@@ -372,10 +373,15 @@ export const Inventory: React.FC = () => {
                   className="w-full border rounded-lg p-2.5 bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 outline-none"
                 >
                   <option value="">Selecione uma categoria</option>
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
+                  {itemCategories.map(cat => (
+                    <option key={cat.id} value={cat.name}>{cat.name}</option>
                   ))}
                 </select>
+                {itemCategories.length === 0 && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Nenhuma categoria disponível. Se o problema persistir, em Configurações adicione categorias ou confira no Supabase se a política RLS permite inserir em <code className="text-[10px]">item_categories</code>.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Unidade de Medida</label>

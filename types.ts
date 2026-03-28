@@ -86,6 +86,7 @@ export interface Item {
   id: string;
   name: string;
   sku: string;
+  /** Em produção: `item_categories.name` (FK `items_category_fkey`); pode ser nome ou legado uuid. */
   category: string;
   type: ItemType;
   unit: string; // Nova propriedade: Litros, Unidade, Kg, etc.

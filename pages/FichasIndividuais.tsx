@@ -22,8 +22,8 @@ import {
   Printer
 } from 'lucide-react';
 
-export const mapItemToFichaTipo = (item: Item): FichaTipo => {
-  const category = (item.category || '').toLowerCase();
+export const mapItemToFichaTipo = (item: Item, resolvedCategoryName?: string): FichaTipo => {
+  const category = (resolvedCategoryName ?? item.category ?? '').toLowerCase();
   const name = (item.name || '').toLowerCase();
 
   if (category.includes('combust') || name.includes('combust') || name.includes('gasolina') || name.includes('diesel')) {
@@ -48,7 +48,8 @@ export const mapItemToFichaTipo = (item: Item): FichaTipo => {
 export const FichasIndividuais = () => {
   const {
     fichasIndividuais, currentUser, allUsers, isAdminOrGM, items, inventory,
-    createFicha, returnFromFicha, confirmFicha, lockFicha, deleteFicha, locations
+    createFicha, returnFromFicha, confirmFicha, lockFicha, deleteFicha, locations,
+    getItemCategoryName
   } = useLogistics();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -466,6 +467,7 @@ export const FichasIndividuais = () => {
             inventory={inventory}
             locations={locations}
             currentUser={currentUser}
+            getItemCategoryName={getItemCategoryName}
             onClose={() => setIsModalOpen(false)}
             onSave={async (data) => {
               await createFicha(data);
@@ -503,11 +505,12 @@ interface FichaDeliveryModalProps {
   inventory: any[];
   locations: any[];
   currentUser: User | null;
+  getItemCategoryName: (id: string | null | undefined) => string;
   onClose: () => void;
   onSave: (data: any) => Promise<void>;
 }
 
-const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId, allPeople, allItems, inventory, locations, currentUser, onClose, onSave }) => {
+const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId, allPeople, allItems, inventory, locations, currentUser, getItemCategoryName, onClose, onSave }) => {
   const [formData, setFormData] = useState({
     tipo: 'combustivel' as FichaTipo,
     entidade_id: initialPersonId || '',
@@ -578,7 +581,7 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
       produto_id: item.id,
       produto: item.name,
       unidade: item.unit || 'Unidade',
-      tipo: mapItemToFichaTipo(item)
+      tipo: mapItemToFichaTipo(item, getItemCategoryName(item.category))
     });
     setSearchProduct(item.name);
     setShowProductList(false);
@@ -652,7 +655,7 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
                       >
                         <div>
                           <div className="text-sm font-semibold text-gray-900">{item.name}</div>
-                          <div className="text-[10px] text-gray-500 uppercase tracking-wide">{item.category} • SKU: {item.sku}</div>
+                          <div className="text-[10px] text-gray-500 uppercase tracking-wide">{getItemCategoryName(item.category)} • SKU: {item.sku}</div>
                         </div>
                         <ArrowRight className="w-4 h-4 text-gray-300" />
                       </button>
@@ -668,7 +671,7 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Categoria do Produto</label>
                 <input
                   type="text"
-                  value={selectedProduct?.category || 'Não selecionado'}
+                  value={selectedProduct ? getItemCategoryName(selectedProduct.category) : 'Não selecionado'}
                   readOnly
                   className="w-full border border-gray-200 rounded-xl p-3 text-sm bg-gray-100 text-gray-600 cursor-not-allowed"
                 />

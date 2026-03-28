@@ -222,13 +222,24 @@ export const POS = () => {
     const handleExpenseSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (expenseForm.amount <= 0) return;
+
+        // Ensure we have a valid cost center ID. Fallback to 'Geral' or first available if somehow empty.
+        const effectiveCostCenterId = expenseForm.costCenterId || 
+            costCenters.find(cc => cc.name === 'Geral')?.id || 
+            costCenters[0]?.id;
+
+        if (!effectiveCostCenterId) {
+            alert("Erro: Nenhum centro de custo disponível. Por favor, crie um nas configurações.");
+            return;
+        }
+
         registerExpense(
             expenseForm.description,
             expenseForm.category || expenseCategories?.[0] || 'Outros',
             expenseForm.amount,
             expenseForm.paymentMethod,
             new Date(expenseForm.date).toISOString(),
-            expenseForm.costCenterId || null,
+            effectiveCostCenterId,
             expenseForm.receiptNumber
         );
         setIsExpenseModalOpen(false);
@@ -236,7 +247,8 @@ export const POS = () => {
             ...expenseForm,
             description: '',
             amount: 0,
-            receiptNumber: ''
+            receiptNumber: '',
+            costCenterId: '' // Reset for next use
         });
     };
 
