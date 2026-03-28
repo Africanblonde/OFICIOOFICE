@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import {
   User, Item, Location, InventoryRecord, Requisition, Role, RequestStatus, LocationType, LogEntry,
   DailyPerformance, AttendanceStatus, ItemCondition, ItemType, ItemTypeDefinition, AccountingEntry,
@@ -14,6 +14,60 @@ import { supabase } from '../services/supabaseClient';
 import subscribeToPublicTables from '../services/realtimeService';
 import createUserWithEdge from '../services/userService';
 import { DEFAULT_ROLE_PERMISSIONS } from '../constants';
+
+/** Quando `item_categories` está vazia, insere estes nomes (FK de `items.category` é para `item_categories.name`). */
+const DEFAULT_ITEM_CATEGORY_NAMES = [
+  'Insumo', 'Combustível', 'Óleo', 'Peças', 'Ferramenta', 'EPI', 'Escritório', 'Limpeza', 'Tecnologia', 'TI', 'Outros'
+] as const;
+
+async function fetchAndEnsureItemCategories(): Promise<{ id: string; name: string }[]> {
+  const { data: catData, error: fetchErr } = await supabase.from('item_categories').select('id, name').order('name');
+  if (fetchErr) {
+    console.error('Erro ao carregar categorias de item:', fetchErr);
+  }
+  if (catData && catData.length > 0) {
+    return catData.map(c => ({ id: c.id, name: c.name }));
+  }
+  const { data: seeded, error: seedErr } = await supabase
+    .from('item_categories')
+    .insert([...DEFAULT_ITEM_CATEGORY_NAMES].map((name) => ({ name })))
+    .select('id, name');
+  if (seedErr) {
+    console.error('Erro ao criar categorias padrão (tabela vazia). Verifique políticas RLS em item_categories:', seedErr);
+    return [];
+  }
+  return (seeded || []).map(c => ({ id: c.id, name: c.name }));
+}
+
+/** BD: `items.category` (text) → FK `items_category_fkey` → `item_categories.name` (não o id). */
+
+function mapDbItemRowToItem(row: any): Item {
+  const cat = row?.category_id ?? row?.category;
+  return {
+    id: row.id,
+    name: row.name,
+    sku: row.sku ?? '',
+    category: cat == null || cat === '' ? '' : String(cat),
+    type: row.type,
+    unit: row.unit ?? '',
+    price: row.price != null ? Number(row.price) : 0,
+    is_for_sale: row.is_for_sale
+  };
+}
+
+/** Valor a gravar em `items.category`: nome exacto em `item_categories.name` (requisito da FK). */
+function resolveItemCategoryNameForDb(
+  raw: string | undefined,
+  cats: { id: string; name: string }[]
+): string | null {
+  const t = (raw ?? '').trim();
+  if (!t) return null;
+  const byName = cats.find(c => c.name === t);
+  if (byName) return byName.name;
+  const byId = cats.find(c => c.id === t);
+  if (byId) return byId.name;
+  return null;
+}
 
 interface LogisticsContextType {
   currentUser: User | null;
@@ -45,6 +99,9 @@ interface LogisticsContextType {
   notification: string | null;
   isAdminOrGM: boolean;
   categories: string[];
+  /** Lista de categorias; em BD `items.category` referencia `item_categories.name`. */
+  itemCategories: { id: string; name: string }[];
+  getItemCategoryName: (category: string | null | undefined) => string;
   measureUnits: string[];
   itemTypes: ItemTypeDefinition[];
   rolePermissions: RolePermissions;
@@ -73,7 +130,7 @@ interface LogisticsContextType {
   getWorkersByManager: (managerId: string) => User[];
   getWorkersByLocation: (locationId: string) => User[];
   refreshData: () => void;
-  registerNewItem: (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number, isForSale?: boolean) => void;
+  registerNewItem: (name: string, sku: string, categorySelection: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number, isForSale?: boolean) => void;
   addToInventory: (itemId: string, locationId: string, qty: number, unitPrice: number, itemName?: string) => void;
   updateItem: (itemId: string, updates: Partial<Item>) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
@@ -191,7 +248,8 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     amount: txn.amount,
     paymentMethod: txn.payment_method,
     items: txn.items?.map((it: any) => ({ itemId: it.item_id, name: it.name, quantity: it.quantity, unitPrice: it.unit_price })) || [],
-    invoiceId: txn.invoice_id || null
+    invoiceId: txn.invoice_id || null,
+    costCenterId: txn.cost_center_id || null
   });
 
   // Helper: validate UUID format
@@ -210,8 +268,20 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   // Payroll State (Ephemeral for current month calculation)
   const [payrollParams, setPayrollParams] = useState<Record<string, { advances: number }>>({});
 
+  // Item categories from DB (`items.category` FK → `item_categories.name`)
+  const [itemCategories, setItemCategories] = useState<{ id: string; name: string }[]>([]);
+  const categories = useMemo(() => itemCategories.map(c => c.name), [itemCategories]);
+
+  const getItemCategoryName = useCallback((category: string | null | undefined) => {
+    if (category == null || category === '') return '';
+    const byName = itemCategories.find(c => c.name === category);
+    if (byName) return byName.name;
+    const byId = itemCategories.find(c => c.id === category);
+    if (byId) return byId.name;
+    return category;
+  }, [itemCategories]);
+
   // Settings State - Keep some defaults for initial setup
-  const [categories, setCategories] = useState<string[]>(['Insumo', 'Combustível', 'Óleo', 'Peças', 'Ferramenta', 'EPI', 'Escritório', 'Limpeza', 'Tecnologia', 'TI', 'Outros']);
   const [measureUnits, setMeasureUnits] = useState<string[]>(['Unidade', 'Par', 'Litros', 'Kg', 'Metros']);
 
   // New: Item Types Management (Name -> Behavior)
@@ -440,229 +510,204 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         window.addEventListener('beforeunload', markOffline);
         document.addEventListener('visibilitychange', handleVisibility);
 
-        // Fetch locations
-        const { data: locationsData } = await supabase.from('locations').select('*');
+        // ── FASE 1: Dados críticos em paralelo (desbloqueia a UI imediatamente) ──
+        const [
+          locationsData,
+          itemCats,
+          itemsData,
+          inventoryData,
+          costCentersData,
+        ] = await Promise.all([
+          supabase.from('locations').select('*').then(r => r.data),
+          fetchAndEnsureItemCategories(),
+          supabase.from('items').select('*').then(r => r.data),
+          supabase.from('inventory').select('*').then(r => r.data),
+          supabase.from('cost_centers').select('*').then(r => r.data),
+        ]);
+
         if (locationsData) {
-          // Map snake_case from DB to camelCase for the app
-          const mappedLocations = (locationsData || []).map(loc => ({
+          setLocations(locationsData.map((loc: any) => ({
             id: loc.id,
             name: loc.name,
             type: loc.type,
             parentId: loc.parent_id
-          }));
-          setLocations(mappedLocations || []);
+          })));
         }
-
-        // Fetch item categories
-        const { data: catData } = await supabase.from('item_categories').select('name').order('name');
-        if (catData && catData.length > 0) {
-          setCategories(catData.map(c => c.name));
-        }
-
-        // Fetch items
-        const { data: itemsData } = await supabase.from('items').select('*');
-        setItems(itemsData || []);
-
-        // Fetch inventory
-        const { data: inventoryData } = await supabase.from('inventory').select('*');
+        if (itemCats.length > 0) setItemCategories(itemCats);
+        setItems((itemsData || []).map(mapDbItemRowToItem));
         if (inventoryData) {
-          // Map snake_case from DB to camelCase for the app
-          const mappedInventory = (inventoryData || []).map(inv => ({
+          setInventory(inventoryData.map((inv: any) => ({
             itemId: inv.item_id,
             locationId: inv.location_id,
             quantity: inv.quantity
-          }));
-          setInventory(mappedInventory || []);
+          })));
         }
-
-        // Fetch requisitions with logs
-        const { data: requisitionsData } = await supabase
-          .from('requisitions')
-          .select(`
-          *,
-          logs:requisition_logs(*)
-        `)
-          .order('created_at', { ascending: false });
-
-        if (requisitionsData) {
-          const mappedRequisitions = (requisitionsData || []).map(req => ({
-            id: req.id,
-            requesterId: req.requester_id,
-            sourceLocationId: req.source_location_id,
-            targetLocationId: req.target_location_id,
-            itemId: req.item_id,
-            quantity: req.quantity,
-            status: req.status,
-            condition: req.condition,
-            createdAt: req.created_at,
-            updatedAt: req.updated_at,
-            logs: req.logs || []
-          }));
-          setRequisitions(mappedRequisitions || []);
-        }
-
-        // Fetch Requisition Sheets (New System)
-        const { data: sheetsData } = await supabase
-          .from('requisition_sheets')
-          .select(`
-          *,
-          items:requisition_sheet_items(*)
-        `)
-          .order('created_at', { ascending: false });
-
-        if (sheetsData) {
-          const mappedSheets: RequisitionSheet[] = (sheetsData || []).map(sheet => ({
-            id: sheet.id,
-            requisitionNumber: sheet.requisition_number,
-            requesterId: sheet.requester_id,
-            sourceLocationId: sheet.source_location_id,
-            sourceLocationName: sheet.source_location_name,
-            targetLocationId: sheet.target_location_id,
-            targetLocationName: sheet.target_location_name,
-            status: sheet.status,
-            notes: sheet.notes,
-            createdAt: sheet.created_at,
-            updatedAt: sheet.updated_at,
-            items: (sheet.items || []).map((it: any) => ({
-              id: it.id,
-              sheetId: it.sheet_id,
-              itemId: it.item_id,
-              itemName: it.item_name,
-              quantity: it.quantity,
-              unit: it.unit,
-              condition: it.condition,
-              isDelivered: it.is_delivered,
-              notes: it.notes
-            }))
-          }));
-          setRequisitionSheets(mappedSheets || []);
-        }
-
-        // Fetch daily performance
-        const { data: performanceData } = await supabase
-          .from('daily_performance')
-          .select('*')
-          .order('date', { ascending: false });
-        if (performanceData) {
-          // Map snake_case from DB to camelCase
-          const mappedPerformance = (performanceData || []).map(perf => ({
-            id: perf.id,
-            workerId: perf.worker_id,
-            date: perf.date,
-            status: perf.status,
-            production: perf.production,
-            notes: perf.notes
-          }));
-          setPerformanceRecords(mappedPerformance || []);
-        }
-
-        // Fetch transactions with items
-        const { data: transactionsData } = await supabase
-          .from('transactions')
-          .select(`
-          *,
-          items:transaction_items(*)
-        `)
-          .order('date', { ascending: false });
-
-        if (transactionsData) {
-          const mappedTransactions = (transactionsData || []).map(txn => ({
-            id: txn.id,
-            type: txn.type,
-            date: txn.date,
-            userId: txn.user_id,
-            locationId: txn.location_id,
-            clientName: txn.client_name,
-            clientNuit: txn.client_nuit,
-            description: txn.description,
-            category: txn.category,
-            amount: txn.amount,
-            paymentMethod: txn.payment_method,
-            items: txn.items?.map((item: any) => ({
-              itemId: item.item_id,
-              name: item.name,
-              quantity: item.quantity,
-              unitPrice: item.unit_price
-            })) || []
-          }));
-          setTransactions(mappedTransactions || []);
-        }
-
-        // Fetch clients
-        const { data: clientsData } = await supabase.from('clients').select('*');
-        setClients(clientsData || []);
-
-        // Fetch invoices with items and payments
-        const { data: invoicesData } = await supabase
-          .from('invoices')
-          .select(`
-          *,
-          itens:invoice_items(*),
-          pagamentos:invoice_payments(*)
-        `)
-          .order('created_at', { ascending: false });
-
-        if (invoicesData) {
-          setInvoices((invoicesData || []).map(inv => ({
-            id: inv.id,
-            numero: inv.numero,
-            tipo: inv.tipo,
-            status: inv.status,
-            locationId: inv.location_id,
-            empresa: {
-              nome: inv.company_name,
-              nuit: inv.company_nuit,
-              endereco: inv.company_address,
-              contacto: inv.company_contact
-            },
-            cliente: {
-              id: inv.client_id,
-              nome: inv.client_name,
-              nuit: inv.client_nuit,
-              endereco: inv.client_address,
-              contacto: inv.client_contact
-            },
-            itens: (inv.itens || []).map((it: any) => ({
-              itemId: it.item_id,
-              descricao: it.description,
-              quantidade: it.quantity,
-              precoUnitario: it.unit_price,
-              impostoPercent: it.tax_percent
-            })),
-            pagamentos: (inv.pagamentos || []).map((p: any) => ({ data: p.date, valor: p.amount, modalidade: p.method, referencia: p.reference })),
-            moeda: inv.currency,
-            dataEmissao: inv.issue_date,
-            vencimento: inv.due_date,
-            observacoes: inv.notes,
-            createdBy: inv.created_by
+        if (costCentersData) {
+          setCostCenters(costCentersData.map((cc: any) => ({
+            id: cc.id,
+            name: cc.name,
+            description: cc.description,
+            type: cc.type,
+            locationId: cc.location_id,
+            managerId: cc.manager_id,
+            isActive: cc.is_active,
+            budgetLimit: cc.budget_limit,
+            budgetPeriod: cc.budget_period,
+            budgetStartDate: cc.budget_start_date,
+            createdAt: cc.created_at
           })));
         }
 
-        // Fetch Fichas Individuais
-        const { data: fichasData } = await supabase.from('fichas_individuais').select('*').order('created_at', { ascending: false });
-        if (fichasData) {
-          setFichasIndividuais(fichasData.map((f: any) => ({
-            id: f.id,
-            codigo: f.codigo,
-            tipo: f.tipo,
-            entidade_id: f.entidade_id,
-            entidade_tipo: f.entidade_tipo,
-            data: f.data,
-            produto_id: f.produto_id,
-            produto: f.produto_name || f.produto,
-            quantidade: f.quantity_delivered || f.quantidade || 0,
-            unidade: f.unidade,
-            stock_antes: f.stock_antes,
-            stock_depois: f.stock_depois,
-            observacoes: f.observacoes,
-            usuario_registou: f.delivered_by || f.usuario_registou,
-            estado: f.estado,
-            created_at: f.created_at,
-            updated_at: f.updated_at
-          })));
-        }
-
+        // UI já pode ser usada — marcamos como carregado
         setIsLoadingUser(false);
+
+        // ── FASE 2: Dados secundários em paralelo (background, não bloqueia o UI) ──
+        Promise.all([
+          supabase.from('requisitions').select('*, logs:requisition_logs(*)').order('created_at', { ascending: false }),
+          supabase.from('requisition_sheets').select('*, items:requisition_sheet_items(*)').order('created_at', { ascending: false }),
+          supabase.from('daily_performance').select('*').order('date', { ascending: false }),
+          supabase.from('transactions').select('*, items:transaction_items(*)').order('date', { ascending: false }),
+          supabase.from('clients').select('*'),
+          supabase.from('invoices').select('*, itens:invoice_items(*), pagamentos:invoice_payments(*)').order('created_at', { ascending: false }),
+          supabase.from('fichas_individuais').select('*').order('created_at', { ascending: false }),
+        ]).then(([reqRes, sheetsRes, perfRes, txnRes, clientsRes, invoicesRes, fichasRes]) => {
+
+          if (reqRes.data) {
+            setRequisitions(reqRes.data.map((req: any) => ({
+              id: req.id,
+              requesterId: req.requester_id,
+              sourceLocationId: req.source_location_id,
+              targetLocationId: req.target_location_id,
+              itemId: req.item_id,
+              quantity: req.quantity,
+              status: req.status,
+              condition: req.condition,
+              createdAt: req.created_at,
+              updatedAt: req.updated_at,
+              logs: req.logs || []
+            })));
+          }
+
+          if (sheetsRes.data) {
+            setRequisitionSheets(sheetsRes.data.map((sheet: any) => ({
+              id: sheet.id,
+              requisitionNumber: sheet.requisition_number,
+              requesterId: sheet.requester_id,
+              sourceLocationId: sheet.source_location_id,
+              sourceLocationName: sheet.source_location_name,
+              targetLocationId: sheet.target_location_id,
+              targetLocationName: sheet.target_location_name,
+              status: sheet.status,
+              notes: sheet.notes,
+              createdAt: sheet.created_at,
+              updatedAt: sheet.updated_at,
+              items: (sheet.items || []).map((it: any) => ({
+                id: it.id,
+                sheetId: it.sheet_id,
+                itemId: it.item_id,
+                itemName: it.item_name,
+                quantity: it.quantity,
+                unit: it.unit,
+                condition: it.condition,
+                isDelivered: it.is_delivered,
+                notes: it.notes
+              }))
+            })));
+          }
+
+          if (perfRes.data) {
+            setPerformanceRecords(perfRes.data.map((perf: any) => ({
+              id: perf.id,
+              workerId: perf.worker_id,
+              date: perf.date,
+              status: perf.status,
+              production: perf.production,
+              notes: perf.notes
+            })));
+          }
+
+          if (txnRes.data) {
+            setTransactions(txnRes.data.map((txn: any) => ({
+              id: txn.id,
+              type: txn.type,
+              date: txn.date,
+              userId: txn.user_id,
+              locationId: txn.location_id,
+              clientName: txn.client_name,
+              clientNuit: txn.client_nuit,
+              description: txn.description,
+              category: txn.category,
+              amount: txn.amount,
+              paymentMethod: txn.payment_method,
+              items: (txn.items || []).map((item: any) => ({
+                itemId: item.item_id,
+                name: item.name,
+                quantity: item.quantity,
+                unitPrice: item.unit_price
+              }))
+            })));
+          }
+
+          setClients(clientsRes.data || []);
+
+          if (invoicesRes.data) {
+            setInvoices(invoicesRes.data.map((inv: any) => ({
+              id: inv.id,
+              numero: inv.numero,
+              tipo: inv.tipo,
+              status: inv.status,
+              locationId: inv.location_id,
+              empresa: {
+                nome: inv.company_name,
+                nuit: inv.company_nuit,
+                endereco: inv.company_address,
+                contacto: inv.company_contact
+              },
+              cliente: {
+                id: inv.client_id,
+                nome: inv.client_name,
+                nuit: inv.client_nuit,
+                endereco: inv.client_address,
+                contacto: inv.client_contact
+              },
+              itens: (inv.itens || []).map((it: any) => ({
+                itemId: it.item_id,
+                descricao: it.description,
+                quantidade: it.quantity,
+                precoUnitario: it.unit_price,
+                impostoPercent: it.tax_percent
+              })),
+              pagamentos: (inv.pagamentos || []).map((p: any) => ({ data: p.date, valor: p.amount, modalidade: p.method, referencia: p.reference })),
+              moeda: inv.currency,
+              dataEmissao: inv.issue_date,
+              vencimento: inv.due_date,
+              observacoes: inv.notes,
+              createdBy: inv.created_by
+            })));
+          }
+
+          if (fichasRes.data) {
+            setFichasIndividuais(fichasRes.data.map((f: any) => ({
+              id: f.id,
+              codigo: f.codigo,
+              tipo: f.tipo,
+              entidade_id: f.entidade_id,
+              entidade_tipo: f.entidade_tipo,
+              data: f.data,
+              produto_id: f.produto_id,
+              produto: f.produto_name || f.produto,
+              quantidade: f.quantity_delivered || f.quantidade || 0,
+              unidade: f.unidade,
+              stock_antes: f.stock_antes,
+              stock_depois: f.stock_depois,
+              observacoes: f.observacoes,
+              usuario_registou: f.delivered_by || f.usuario_registou,
+              estado: f.estado,
+              created_at: f.created_at,
+              updated_at: f.updated_at
+            })));
+          }
+        }).catch(err => console.error('Erro ao carregar dados secundários:', err));
       } catch (err) {
         console.error('❌ Erro crítico ao carregar dados do usuário:', err);
         // Mesmo em erro, marcar como carregado para não ficar travado na loading screen
@@ -922,7 +967,12 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           })));
         }
         const { data: itsData } = await supabase.from('items').select('*');
-        if (itsData) setItems(itsData);
+        if (itsData) setItems(itsData.map(mapDbItemRowToItem));
+
+        const refreshItemCats = await fetchAndEnsureItemCategories();
+        if (refreshItemCats.length > 0) {
+          setItemCategories(refreshItemCats);
+        }
         // -----------------------------------------------------------------------
 
       } else if (error) {
@@ -1086,7 +1136,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         if (table === 'items') {
           const { data: itemsData } = await supabase.from('items').select('*');
-          if (itemsData) setItems(itemsData);
+          if (itemsData) setItems(itemsData.map(mapDbItemRowToItem));
           return;
         }
 
@@ -1385,12 +1435,24 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     setAccountingEntries(prev => [newEntry, ...prev]);
 
     // 2. NEW: Record Financial Expense (Purchase)
+    const nameToUse = itemName || item?.name || 'Item';
+    const totalValue = qty * unitPrice;
+    
     try {
-      const nameToUse = itemName || item?.name || 'Item';
       const description = `Compra de estoque: ${qty}x ${nameToUse} (${item?.unit || 'Unidade'})`;
-      const totalValue = qty * unitPrice;
 
       if (totalValue > 0) {
+        // Resolve the cost center for stock purchases: prefer "Compras de Estoque", else first active
+        const stockCostCenter =
+          costCenters.find(cc => cc.name === 'Compras de Estoque' && cc.isActive !== false) ||
+          costCenters.find(cc => cc.isActive !== false) ||
+          costCenters[0];
+
+        if (!stockCostCenter) {
+          showNotification('Erro: Nenhum centro de custo disponível. Crie um centro de custo em Configurações.');
+          throw new Error('Nenhum centro de custo disponível para registar a despesa de estoque.');
+        }
+
         // Pass the stock location so the expense is attributed to the correct sector
         await registerExpense(
           description,
@@ -1398,16 +1460,33 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           totalValue,
           PaymentMethod.CASH,
           new Date().toISOString(),
-          null,          // costCenterId: none specific
-          undefined,    // receiptNumber
-          locationId    // overrideLocationId: use the stock location
+          stockCostCenter.id,  // costCenterId: resolved automatically
+          undefined,           // receiptNumber
+          locationId           // overrideLocationId: use the stock location
         );
       }
     } catch (txnError) {
-      console.error('Erro ao registrar despesa de estoque:', txnError);
+      console.error('Erro ao registrar despesa de estoque, revertendo a adição...', txnError);
+      
+      // Rollback database directly since state might be outdated
+      const { data: bData } = await supabase.from('inventory')
+        .select('quantity').match({ item_id: itemId, location_id: locationId }).single();
+      
+      if (bData) {
+        const newStock = Math.max(0, bData.quantity - qty);
+        if (newStock === 0) {
+          await supabase.from('inventory').delete().match({ item_id: itemId, location_id: locationId });
+        } else {
+          await supabase.from('inventory').update({ quantity: newStock }).match({ item_id: itemId, location_id: locationId });
+        }
+        mergeInventoryRecord(itemId, locationId, newStock);
+      }
+      setAccountingEntries(prev => prev.filter(e => e.id !== newEntry.id));
+      showNotification('Falha: Despesa de compra não registrada. O estoque foi revertido.');
+      return;
     }
 
-    showNotification(`Estoque adicionado: ${qty}x ${itemName || item?.name || 'Item'}`);
+    showNotification(`Estoque adicionado: ${qty}x ${nameToUse}`);
   };
 
   const updateItem = async (itemId: string, updates: Partial<Item>) => {
@@ -1417,47 +1496,72 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
 
     try {
+      const patch: Record<string, unknown> = {
+        name: updates.name,
+        sku: updates.sku,
+        unit: updates.unit,
+        type: updates.type,
+        price: updates.price,
+        is_for_sale: updates.is_for_sale
+      };
+      if (updates.category !== undefined && updates.category !== null) {
+        const catName = resolveItemCategoryNameForDb(String(updates.category), itemCategories);
+        if (catName) {
+          patch.category = catName;
+        }
+      }
       const { data, error } = await supabase
         .from('items')
-        .update({
-          name: updates.name,
-          sku: updates.sku,
-          category: updates.category,
-          unit: updates.unit,
-          type: updates.type,
-          price: updates.price,
-          is_for_sale: updates.is_for_sale
-        })
+        .update(patch)
         .eq('id', itemId)
         .select()
         .single();
 
       if (error) throw error;
 
-      setItems(prev => prev.map(i => i.id === itemId ? data : i));
+      setItems(prev => prev.map(i => i.id === itemId ? mapDbItemRowToItem(data) : i));
       showNotification(`✅ Item "${updates.name || 'item'}" atualizado com sucesso.`);
     } catch (error: any) {
       showNotification(`❌ Erro ao atualizar item: ${error.message}`);
     }
   };
 
-  const registerNewItem = async (name: string, sku: string, category: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number, isForSale: boolean = true) => {
-    const { data, error } = await supabase.from('items').insert({
-      name,
-      sku,
-      category,
-      unit,
-      type: behavior,
-      price: unitPrice,
-      is_for_sale: isForSale
-    }).select().single();
+  const registerNewItem = async (name: string, sku: string, categorySelection: string, unit: string, behavior: ItemType, initialQty: number, locationId: string, unitPrice: number, isForSale: boolean = true) => {
+    const categoryName = resolveItemCategoryNameForDb(categorySelection, itemCategories);
+    if (!categoryName) {
+      showNotification('Selecione uma categoria válida (lista vazia ou valor inválido).');
+      return;
+    }
+    const { data: catRow, error: catLookupErr } = await supabase
+      .from('item_categories')
+      .select('name')
+      .eq('name', categoryName)
+      .maybeSingle();
+    if (catLookupErr || !catRow) {
+      showNotification('Categoria não existe na base. Recarregue a página ou crie a categoria em Configurações.');
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('items')
+      .insert({
+        name,
+        sku,
+        category: categoryName,
+        unit,
+        type: behavior,
+        price: unitPrice,
+        is_for_sale: isForSale
+      })
+      .select()
+      .single();
 
     if (error) {
       showNotification(`Erro ao cadastrar item: ${error.message}`);
       return;
     }
 
-    const newItem = data as Item;
+    const newItem = mapDbItemRowToItem(data);
     setItems(prev => [...prev, newItem]);
 
     if (initialQty > 0) {
@@ -1473,8 +1577,19 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
-    // Attempt to delete from Supabase
-    // Note: DB constraints should be set to CASCADE for inventory and SET NULL for history
+    // Step 1: Delete all inventory records for this item first
+    // (avoids FK constraint violation and clears orphaned cards)
+    const { error: invError } = await supabase
+      .from('inventory')
+      .delete()
+      .eq('item_id', itemId);
+
+    if (invError) {
+      console.warn('Aviso ao remover inventário do item:', invError.message);
+      // Non-fatal — continue attempting to delete the item
+    }
+
+    // Step 2: Delete from Supabase items table
     const { error } = await supabase.from('items').delete().eq('id', itemId);
 
     if (error) {
@@ -1485,10 +1600,10 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         return;
       }
 
-      // Foreign key / conflict (has inventory or other constraints)
+      // Foreign key / conflict (has other constraints)
       const msg = (error.message || '').toLowerCase();
       if (msg.includes('foreign key') || msg.includes('violates') || msg.includes('conflict') || msg.includes('cannot delete')) {
-        showNotification('❌ Item tem registos associados (estoque ou dependências). Remova-os antes de apagar.');
+        showNotification('❌ Item tem outros registos associados (histórico, faturas). Não é possível apagar.');
         return;
       }
 
@@ -1497,8 +1612,9 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
-    // Update local state
+    // Step 3: Update both items and inventory in local state
     setItems(prev => prev.filter(i => i.id !== itemId));
+    setInventory(prev => prev.filter(record => record.itemId !== itemId));
     showNotification(`✅ Item apagado com sucesso.`);
   };
 
@@ -1767,12 +1883,14 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   const addCategory = async (cat: string) => {
-    const { error } = await supabase.from('item_categories').insert({ name: cat });
+    const { data, error } = await supabase.from('item_categories').insert({ name: cat }).select('id, name').single();
     if (error) {
       showNotification(`Erro ao adicionar categoria: ${error.message}`);
       return;
     }
-    setCategories([...categories, cat]);
+    if (data) {
+      setItemCategories(prev => [...prev, { id: data.id, name: data.name }].sort((a, b) => a.name.localeCompare(b.name)));
+    }
   };
   const addMeasureUnit = (unit: string) => setMeasureUnits([...measureUnits, unit]);
   const addItemType = (name: string, behavior: ItemType) => {
@@ -1945,56 +2063,48 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       return;
     }
 
-    // Get a default cost center if none exists
-    let costCenterId = costCenterIdParam;
-    if (!costCenterId) {
-      if (costCenters.length > 0) {
-        costCenterId = costCenters[0].id;
-      } else {
-        const { data: ccData } = await supabase.from('cost_centers').select('id').eq('is_active', true).limit(1);
-        if (ccData && ccData.length > 0) costCenterId = ccData[0].id;
-      }
-    }
-
-    // Determine the location for this expense: prefer override, then the costCenterId if it's a location UUID, then user's own location
-    const effectiveLocationId = overrideLocationId ?? currentUser.locationId;
-
-    const expenseData: any = {
-      type: TransactionType.EXPENSE,
-      user_id: currentUser.id,
-      description,
-      category,
-      amount,
-      payment_method: paymentMethod,
-      cost_center_id: costCenterId,
-      date: date || new Date().toISOString(),
-      receipt_number: receiptNumber
-    };
-
     if (!isValidUuid(currentUser.id)) {
       showNotification('Erro: ID do usuário inválido. Contate o administrador.');
       return;
     }
 
-    // Include location_id (prefer override, fallback to user's location)
-    if (effectiveLocationId) {
-      if (!isValidUuid(effectiveLocationId)) {
-        showNotification('Erro: Localização inválida. Contate o administrador.');
-        return;
-      }
-      expenseData.location_id = effectiveLocationId;
+    // location_id is NOT NULL in the DB — resolve it now from: override > caller > user's own location
+    const effectiveLocationId = overrideLocationId ?? currentUser.locationId;
+    if (!effectiveLocationId || !isValidUuid(effectiveLocationId)) {
+      showNotification('Erro: Localização inválida para registrar a despesa. Verifique o cadastro do utilizador.');
+      throw new Error('location_id inválido para despesa de estoque.');
     }
+
+    // Validate cost_center_id — the DB trigger requires it for EXPENSE type
+    if (!costCenterIdParam || !isValidUuid(costCenterIdParam)) {
+      showNotification('Erro: Centro de custo inválido ou não fornecido para a despesa.');
+      throw new Error('cost_center_id inválido ou ausente para despesa.');
+    }
+
+    // Only include columns that exist in the `transactions` table schema
+    const expenseData: any = {
+      type: TransactionType.EXPENSE,
+      user_id: currentUser.id,
+      location_id: effectiveLocationId,
+      description,
+      category,
+      amount,
+      payment_method: paymentMethod,
+      date: date || new Date().toISOString(),
+      cost_center_id: costCenterIdParam,
+    };
 
     const { data, error } = await supabase.from('transactions').insert(expenseData).select().single();
 
     if (error) {
       const msg = error.message || '';
+      console.error('[registerExpense] Supabase error:', msg, '\nPayload sent:', expenseData);
       if (msg.toLowerCase().includes('foreign key') || msg.toLowerCase().includes('violates foreign key')) {
         showNotification('Erro de integridade referencial ao registrar despesa. Verifique cliente/locais.');
       } else {
         showNotification(`Erro ao registrar despesa: ${msg}`);
       }
-      return;
+      throw new Error(msg);
     }
 
     // Reload transactions
@@ -2691,7 +2801,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       // 5. Detect correct type based on Item data
       const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
       const itemName = normalize(item?.name || ficha.produto || '');
-      const itemCategory = normalize(item?.category || '');
+      const itemCategory = normalize(getItemCategoryName(item?.category) || '');
 
       const normalizeType = (tipo: string): FichaTipo => {
         const candidate = tipo?.toLowerCase();
@@ -3137,7 +3247,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     setInvoicePendingLinks([]);
     setCreditNotes([]);
 
-    setCategories([]);
+    setItemCategories([]);
     setMeasureUnits([]);
     setItemTypes([]);
     setPaymentMethods([]);
@@ -3173,7 +3283,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       currentUser, allUsers, items, locations, inventory, requisitions, requisitionSheets, performanceRecords, accountingEntries, transactions, invoices, clients, fichasIndividuais, initialStocks, stockAlarms, auditLogs, logEntries,
       costCenters, pendingInvoiceItems, invoicePendingLinks, creditNotes,
       selectedDepartmentId, lastUpdated, notification, isAdminOrGM,
-      categories, measureUnits, itemTypes, rolePermissions,
+      categories, itemCategories, getItemCategoryName, measureUnits, itemTypes, rolePermissions,
       paymentMethods, expenseCategories, companyInfo, availableCurrencies, defaultCurrency,
       payrollParams,
       setSelectedDepartmentId, createRequisition,
