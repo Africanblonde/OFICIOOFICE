@@ -116,6 +116,7 @@ interface LogisticsContextType {
 
   // Ficha Individual Functions
   createFicha: (ficha: Omit<FichaIndividual, 'id' | 'codigo' | 'created_at' | 'updated_at'>, explicitLocationId?: string) => Promise<void>;
+  returnFromFicha: (fichaId: string, returnQuantity: number, observacoes?: string, explicitTargetLocationId?: string) => Promise<void>;
   confirmFicha: (fichaId: string) => Promise<void>;
   lockFicha: (fichaId: string) => Promise<void>;
   updateFicha: (ficha: FichaIndividual) => Promise<void>;
@@ -147,6 +148,10 @@ interface LogisticsContextType {
   createInitialStock: (stock: Omit<InitialStock, 'id' | 'created_at'>) => Promise<void>;
   updateStockAlarm: (alarm: StockAlarm) => Promise<void>;
   getAuditLogsForTable: (table: string, recordId: string) => AuditLog[];
+  // Chat notifications
+  unreadChatCount: number;
+  resetChatCount: () => void;
+
   // Reset local/front-end data (clears localStorage and resets in-memory lists)
   resetLocalData: () => void;
 }
@@ -241,6 +246,10 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [pendingInvoiceItems, setPendingInvoiceItems] = useState<PendingInvoiceItem[]>([]);
   const [invoicePendingLinks, setInvoicePendingLinks] = useState<InvoicePendingLink[]>([]);
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+
+  // Chat notifications state
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const resetChatCount = () => setUnreadChatCount(0);
 
   const [isLoadingUser, setIsLoadingUser] = useState(true);
 
@@ -629,6 +638,30 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
           })));
         }
 
+        // Fetch Fichas Individuais
+        const { data: fichasData } = await supabase.from('fichas_individuais').select('*').order('created_at', { ascending: false });
+        if (fichasData) {
+          setFichasIndividuais(fichasData.map((f: any) => ({
+            id: f.id,
+            codigo: f.codigo,
+            tipo: f.tipo,
+            entidade_id: f.entidade_id,
+            entidade_tipo: f.entidade_tipo,
+            data: f.data,
+            produto_id: f.produto_id,
+            produto: f.produto_name || f.produto,
+            quantidade: f.quantity_delivered || f.quantidade || 0,
+            unidade: f.unidade,
+            stock_antes: f.stock_antes,
+            stock_depois: f.stock_depois,
+            observacoes: f.observacoes,
+            usuario_registou: f.delivered_by || f.usuario_registou,
+            estado: f.estado,
+            created_at: f.created_at,
+            updated_at: f.updated_at
+          })));
+        }
+
         setIsLoadingUser(false);
       } catch (err) {
         console.error('❌ Erro crítico ao carregar dados do usuário:', err);
@@ -639,6 +672,36 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     loadData();
 
+    // Subscribe to global changes (Realtime)
+    let globalUnsubscribe: (() => void) | null = null;
+    if (supabase) {
+      globalUnsubscribe = subscribeToPublicTables(supabase, (payload) => {
+        // Handle new chat messages for global notification
+        if (payload.table === 'chat_messages' && payload.eventType === 'INSERT') {
+          // Check if message is from another user
+          // Note: we use session since currentUser might not be updated yet
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user && payload.new.sender_id !== session.user.id) {
+              setUnreadChatCount(prev => prev + 1);
+            }
+          });
+        }
+
+        // Real-time Inventory sync
+        if (payload.table === 'inventory') {
+          const inv = payload.new;
+          if (inv) {
+            setInventory(prev => {
+              const idx = prev.findIndex(r => r.itemId === inv.item_id && r.locationId === inv.location_id);
+              const mapped = { itemId: inv.item_id, locationId: inv.location_id, quantity: inv.quantity };
+              if (idx === -1) return [...prev, mapped];
+              const copy = [...prev]; copy[idx] = mapped; return copy;
+            });
+          }
+        }
+      });
+    }
+
     // Return cleanup function to the useEffect
     return () => {
       if (markOffline) window.removeEventListener('beforeunload', markOffline);
@@ -646,6 +709,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       if (channel) {
         try { channel.unsubscribe(); } catch (e) { /* ignore */ }
       }
+      if (globalUnsubscribe) globalUnsubscribe();
     };
   }, []);
 
@@ -887,7 +951,7 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     }, REFRESH_INTERVAL);
 
     return () => clearInterval(intervalId);
-  }, [items]);
+  }, []);
 
   // Real-time subscriptions: keep UI in sync when other users make changes.
   useEffect(() => {
@@ -1240,6 +1304,16 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     showNotification(`Status da requisição atualizado: ${newStatus}`);
   };
 
+  const mergeInventoryRecord = (itemId: string, locationId: string, quantity: number) => {
+    setInventory(prev => {
+      const existing = prev.find(r => r.itemId === itemId && r.locationId === locationId);
+      if (existing) {
+        return prev.map(r => r.itemId === itemId && r.locationId === locationId ? { ...r, quantity } : r);
+      }
+      return [...prev, { itemId, locationId, quantity }];
+    });
+  };
+
   const updateInventory = async (itemId: string, locationId: string, change: number) => {
     const existingRecord = inventory.find(r => r.itemId === itemId && r.locationId === locationId);
 
@@ -1258,24 +1332,21 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         return;
       }
 
-      setInventory(prev => prev.map(r =>
-        (r.itemId === itemId && r.locationId === locationId)
-          ? { ...r, quantity: newQuantity }
-          : r
-      ));
+      mergeInventoryRecord(itemId, locationId, newQuantity);
     } else if (change > 0) {
-      const { data } = await supabase.from('inventory').insert({
+      const { data, error } = await supabase.from('inventory').insert({
         item_id: itemId,
         location_id: locationId,
         quantity: change
       }).select().single();
 
+      if (error) {
+        console.error('Error inserting inventory:', error.code, error.message);
+        return;
+      }
+
       if (data) {
-        setInventory(prev => [...prev, {
-          itemId: data.item_id,
-          locationId: data.location_id,
-          quantity: data.quantity
-        }]);
+        mergeInventoryRecord(itemId, locationId, data.quantity);
       }
     }
   };
@@ -1292,18 +1363,6 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       alert("Você só pode adicionar estoque à sua própria localização.");
       return;
     }
-
-    // Update local inventory immediately for better UX
-    setInventory(prev => {
-      const existingIdx = prev.findIndex(r => r.itemId === itemId && r.locationId === locationId);
-      if (existingIdx >= 0) {
-        const updated = [...prev];
-        updated[existingIdx] = { ...updated[existingIdx], quantity: updated[existingIdx].quantity + qty };
-        return updated;
-      }
-      // If it doesn't exist, we rely on the DB update which will trigger a refresh or we add a temp record
-      return [...prev, { id: `temp-${Date.now()}`, itemId, locationId, quantity: qty }];
-    });
 
     await updateInventory(itemId, locationId, qty);
 
@@ -2604,11 +2663,21 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         return;
       }
 
+      if (ficha.quantidade <= 0) {
+        showNotification('Erro: Quantidade inválida. Deve ser maior que zero.');
+        return;
+      }
+
       // 2. Obter stock atual antes da redução
       let stockAntes = 0;
       if (ficha.produto_id) {
         const invRecord = inventory.find(i => i.itemId === ficha.produto_id && i.locationId === targetLocationId);
         stockAntes = invRecord?.quantity || 0;
+
+        if (ficha.quantidade > stockAntes) {
+          showNotification('Erro: quantidade supera stock disponível.');
+          return;
+        }
       }
 
       // 3. Gerar código automático
@@ -2624,27 +2693,24 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       const itemName = normalize(item?.name || ficha.produto || '');
       const itemCategory = normalize(item?.category || '');
 
-      let detectedTipo = ficha.tipo;
+      const normalizeType = (tipo: string): FichaTipo => {
+        const candidate = tipo?.toLowerCase();
+        if (candidate === 'combustivel' || candidate === 'combustível') return 'combustivel';
+        if (candidate === 'oleo' || candidate === 'óleo') return 'oleo';
+        if (candidate === 'pecas' || candidate === 'peças') return 'pecas';
+        if (candidate === 'materiais' || candidate === 'epi') return 'materiais';
+        if (candidate === 'ferramentas') return 'ferramentas';
+        return 'materiais';
+      };
+
+      let detectedTipo = normalizeType(ficha.tipo);
       let deliveryType = 'OUTROS';
 
-      if (itemName.includes('combustivel') || itemName.includes('gasolina') || itemName.includes('diesel') || itemCategory.includes('combustivel')) {
-        detectedTipo = 'combustivel';
-        deliveryType = 'COMBUSTIVEL';
-      } else if (itemName.includes('oleo') || itemCategory.includes('oleo')) {
-        detectedTipo = 'oleo';
-        deliveryType = 'COMBUSTIVEL';
-      } else if (itemName.includes('ferramenta') || itemCategory.includes('ferramenta')) {
-        detectedTipo = 'ferramentas';
-        deliveryType = 'FERRAMENTA';
-      } else if (itemName.includes('peca') || itemCategory.includes('peca')) {
-        detectedTipo = 'pecas';
-        deliveryType = 'MATERIAL';
-      } else if (itemName.includes('epi') || itemCategory.includes('epi')) {
-        detectedTipo = 'materiais';
-        deliveryType = 'EPI';
-      } else {
-        if (detectedTipo === 'materiais') deliveryType = 'MATERIAL';
-      }
+      if (detectedTipo === 'combustivel') deliveryType = 'COMBUSTIVEL';
+      else if (detectedTipo === 'oleo') deliveryType = 'COMBUSTIVEL';
+      else if (detectedTipo === 'ferramentas') deliveryType = 'FERRAMENTA';
+      else if (detectedTipo === 'pecas') deliveryType = 'MATERIAL';
+      else if (detectedTipo === 'materiais') deliveryType = 'MATERIAL';
 
       // 6. Inserir registo
       const { data, error } = await supabase.from('fichas_individuais').insert({
@@ -2653,7 +2719,10 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
         entidade_id: ficha.entidade_id,
         entidade_tipo: ficha.entidade_tipo,
         employee_id: ficha.entidade_tipo === 'trabalhador' ? ficha.entidade_id : null,
-        data: ficha.data,
+        data: (() => {
+          const today = new Date().toISOString().split('T')[0];
+          return ficha.data === today ? new Date().toISOString() : `${ficha.data}T12:00:00.000Z`;
+        })(),
         produto_id: ficha.produto_id,
         produto_name: ficha.produto,
         product_name: ficha.produto, // Added to satisfy NOT NULL constraint
@@ -2683,6 +2752,73 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch (error: any) {
       console.error('Erro ao criar ficha:', error);
       showNotification(`Erro ao criar ficha: ${error.message}`);
+    }
+  };
+
+  const returnFromFicha = async (fichaId: string, returnQuantity: number, observacoes: string = '', explicitTargetLocationId?: string) => {
+    if (!currentUser) return;
+    const original = fichasIndividuais.find(f => f.id === fichaId);
+    if (!original) {
+      showNotification('Ficha não encontrada.');
+      return;
+    }
+
+    if (!original.produto_id) {
+      showNotification('Operação inválida: ficha sem produto associado.');
+      return;
+    }
+
+    if (returnQuantity <= 0) {
+      showNotification('Quantidade de retorno deve ser maior que 0.');
+      return;
+    }
+
+    const person = allUsers.find(u => u.id === original.entidade_id);
+    const targetLocationId = explicitTargetLocationId || person?.locationId || currentUser.locationId;
+    if (!targetLocationId) {
+      showNotification('Não foi possível determinar a localização de retorno.');
+      return;
+    }
+
+    const invRecord = inventory.find(i => i.itemId === original.produto_id && i.locationId === targetLocationId);
+    const stockAntes = invRecord?.quantity || 0;
+    const { count } = await supabase.from('fichas_individuais').select('id', { count: 'exact', head: true });
+    const nextCode = `RET-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, '0')}`;
+
+    try {
+      const { data, error } = await supabase.from('fichas_individuais').insert({
+        codigo: nextCode,
+        tipo: original.tipo,
+        entidade_id: original.entidade_id,
+        entidade_tipo: original.entidade_tipo,
+        employee_id: original.entidade_tipo === 'trabalhador' ? original.entidade_id : null,
+        data: new Date().toISOString(),
+        produto_id: original.produto_id,
+        produto_name: original.produto,
+        product_name: original.produto,
+        quantity_requested: returnQuantity,
+        quantity_delivered: returnQuantity,
+        unidade: original.unidade,
+        stock_antes: stockAntes,
+        stock_depois: stockAntes + returnQuantity,
+        observacoes: observacoes || `Retorno de ${returnQuantity} ${original.unidade}`,
+        delivered_by: currentUser.id,
+        unit_price: original.unit_price || 0,
+        total_value: (original.unit_price || 0) * returnQuantity,
+        delivery_type: original.delivery_type || 'MATERIAL',
+        inventory_reduced: false,
+        estado: 'confirmado'
+      }).select().single();
+
+      if (error) throw error;
+      if (!data) throw new Error('Erro ao salvar retorno.');
+
+      await updateInventory(original.produto_id, targetLocationId, returnQuantity);
+      setFichasIndividuais(prev => [data, ...prev]);
+      showNotification('Retorno registrado e estoque atualizado!');
+    } catch (err: any) {
+      console.error('Erro ao registrar retorno na ficha:', err);
+      showNotification(`Erro ao registrar retorno: ${err.message || err}`);
     }
   };
 
@@ -3054,12 +3190,13 @@ export const LogisticsProvider: React.FC<{ children: ReactNode }> = ({ children 
       addInvoice, updateInvoice, deleteInvoice, getNextInvoiceNumber, registerPayment,
       addClient, updateClient, getClientBalance,
       updatePayrollParams, calculatePayrollForUser,
-      createFicha, confirmFicha, lockFicha, updateFicha, deleteFicha, createInitialStock, updateStockAlarm, getAuditLogsForTable,
+      createFicha, returnFromFicha, confirmFicha, lockFicha, updateFicha, deleteFicha, createInitialStock, updateStockAlarm, getAuditLogsForTable,
       addCostCenter, updateCostCenter, deleteCostCenter,
       createPendingInvoiceItem, updatePendingInvoiceItem, deletePendingInvoiceItem, linkInvoiceToPendingItem,
       createCreditNote, updateCreditNote,
       updateClientExtended, getClientCreditStatus,
-      generateSalesReport, generateFinancialReport, generateProfitabilityReport
+      generateSalesReport, generateFinancialReport, generateProfitabilityReport,
+      unreadChatCount, resetChatCount
     }}>
       {children}
     </LogisticsContext.Provider>

@@ -126,8 +126,47 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
                 throw new Error('Por favor, preencha seu cargo');
             }
 
-            console.log('🔍 Iniciando processo de registo nativo...', { email, name, role });
+            console.log('🔍 Iniciando processo de configuração / registo...', { email, name, role });
 
+            // Verificar se o utilizador já está logado (fluxo de recuperação de conta)
+            const { data: sessionData } = await supabase.auth.getSession();
+            
+            if (sessionData?.session?.user) {
+                console.log('Utilizador já autenticado. Atualizando perfil em vez de criar novo login...');
+                
+                // 1. Criar a Sede Inicial (Localização)
+                const { data: locData, error: locError } = await supabase
+                    .from('locations')
+                    .insert([{ name: companyName, type: 'CENTRAL' }])
+                    .select('id')
+                    .single();
+                    
+                if (locError) {
+                    throw new Error('Erro ao criar armazém principal: ' + locError.message);
+                }
+
+                // 2. Atualizar o utilizador que está órfão de localização
+                const { error: updError } = await supabase
+                    .from('users')
+                    .update({ 
+                        name: name,
+                        job_title: jobTitle,
+                        role: role,
+                        location_id: locData.id 
+                    })
+                    .eq('id', sessionData.session.user.id);
+                    
+                if (updError) {
+                    throw new Error('Erro ao atualizar perfil do utilizador: ' + updError.message);
+                }
+
+                setMessage('Bem-vindo! O seu armazém-sede foi registado com sucesso.');
+                // Neste cenário, podemos mandar logo para o Painel, em vez do step 'confirm'
+                onAuthSuccess();
+                return;
+            }
+
+            // Fluxo 100% Novo (Sign Up normal)
             const { data, error: signupError } = await supabase.auth.signUp({
                 email,
                 password,

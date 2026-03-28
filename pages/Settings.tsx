@@ -193,7 +193,7 @@ const UserModal = ({
               required
             >
               <option value="">Selecione a localização</option>
-              {locations.map((loc) => (
+              {locations.filter(l => l.type !== LocationType.CENTRAL).map((loc) => (
                 <option key={loc.id} value={loc.id}>{loc.name}</option>
               ))}
             </select>
@@ -542,7 +542,7 @@ export const Settings = () => {
               </form>
             )}
             <div className="space-y-2">
-              {locations.filter(l => l.type !== 'CENTRAL').map((loc) => (
+              {locations.filter(l => l.type !== LocationType.CENTRAL).map((loc) => (
                 <div key={loc.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200">
                   <div>
                     <p className="font-medium text-gray-800">{loc.name}</p>

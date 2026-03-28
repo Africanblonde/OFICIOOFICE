@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLogistics } from '../context/useLogistics';
-import { ItemCondition, Role } from '../types';
+import { ItemCondition, Role, LocationType } from '../types';
 import { Plus, Trash2, ArrowLeft, Save, Box, FileText, Check } from 'lucide-react';
 
 interface RowItem {
@@ -164,7 +164,7 @@ export const RequisitionForm = ({ onCancel, onSuccess }: RequisitionFormProps) =
                             required
                         >
                             <option value="">Selecione uma localização...</option>
-                            {availableTargets.map(loc => (
+                            {locations.filter(l => l.type !== LocationType.CENTRAL && l.id !== currentUser?.locationId).map(loc => (
                                 <option key={loc.id} value={loc.id}>{loc.name}</option>
                             ))}
                         </select>

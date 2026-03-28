@@ -11,6 +11,7 @@ interface ChatGroup {
   type: 'DIRECT' | 'GROUP' | 'CHANNEL';
   description?: string;
   created_at: string;
+  participants: string[];
 }
 
 interface ChatMessage {
@@ -20,6 +21,7 @@ interface ChatMessage {
   content: string;
   created_at: string;
   is_deleted: boolean;
+  pending?: boolean;
   chat_file_attachments?: {
     id: string;
     file_name: string;
@@ -30,7 +32,7 @@ interface ChatMessage {
 }
 
 export const Chat = () => {
-  const { currentUser, allUsers } = useLogistics();
+  const { currentUser, allUsers, resetChatCount } = useLogistics();
   const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<ChatGroup | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -42,11 +44,13 @@ export const Chat = () => {
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Load user groups on mount
   useEffect(() => {
     loadUserGroups();
+    resetChatCount();
   }, []);
 
   // Subscribe to group messages
@@ -57,7 +61,22 @@ export const Chat = () => {
 
     const subscribe = async () => {
       unsubscribeFunc = await subscribeToGroupMessages(supabase, selectedGroup.id, (payload) => {
-        setMessages((prev) => [...prev, payload.new]);
+        setMessages((prev) => {
+          // Prevent duplicates if optimistic message already matches
+          const isMine = payload.new.sender_id === currentUser?.id;
+          const exists = prev.some(m => m.id === payload.new.id);
+          if (exists) return prev;
+
+          if (isMine) {
+            // Remove optimistic message that matches this new real one
+            // We search for a pending message with same content
+            return prev
+              .filter(m => !(m.pending && m.content === payload.new.content))
+              .concat(payload.new);
+          }
+
+          return [...prev, payload.new];
+        });
       });
     };
 
@@ -103,9 +122,13 @@ export const Chat = () => {
   const loadUserGroups = async () => {
     try {
       const groupList = await chatService.getUserGroups();
-      setGroups(groupList);
-      if (groupList.length > 0) {
-        setSelectedGroup(groupList[0]);
+      const mappedGroups = (groupList || []).map((g: any) => ({
+        ...g,
+        participants: g.chat_group_members?.map((m: any) => m.user_id) || []
+      }));
+      setGroups(mappedGroups as ChatGroup[]);
+      if (mappedGroups.length > 0) {
+        setSelectedGroup(mappedGroups[0] as ChatGroup);
       }
     } catch (error) {
       setStatus({ type: 'error', message: `Erro ao carregar conversas: ${error instanceof Error ? error.message : String(error)}` });
@@ -131,18 +154,41 @@ export const Chat = () => {
     }
   };
 
-  const handleSendMessage = async () => {
-    if ((!messageInput.trim() && !selectedFile) || !selectedGroup) return;
+  const getGroupName = (group: ChatGroup) => {
+    if (!group) return 'Conversa';
+    if (group.name && group.name.startsWith('DIRECT-')) {
+      const otherParticipantId = group.participants?.find((id: string) => id !== currentUser?.id);
+      const otherUser = allUsers.find(u => u.id === otherParticipantId);
+      return otherUser?.name || 'Conversa Direta';
+    }
+    return group.name || 'Conversa';
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if ((!messageInput.trim() && !selectedFile) || !selectedGroup || !currentUser) return;
+
+    const tempContent = messageInput;
+    const tempId = `temp-${Date.now()}`;
+
+    // Optimistic Update
+    const optimisticMsg: ChatMessage = {
+      id: tempId,
+      group_id: selectedGroup.id,
+      sender_id: currentUser.id,
+      content: tempContent || (selectedFile ? `Ficheiro: ${selectedFile.name}` : ''),
+      created_at: new Date().toISOString(),
+      is_deleted: false,
+      pending: true
+    };
+
+    setMessages(prev => [...prev, optimisticMsg]);
+    setMessageInput('');
 
     try {
       setIsUploading(true);
 
-      // 1. Create the message first to get an ID for the attachment
-      // Actually, my chatService.uploadFile needs a messageId.
-      // Let's modify the flow: create message first, then upload, or send content + file.
-      // Current chatService.sendMessage only takes content.
-
-      const msg = await chatService.sendMessage(selectedGroup.id, messageInput || (selectedFile ? `File: ${selectedFile.name}` : ''));
+      const msg = await chatService.sendMessage(selectedGroup.id, tempContent || (selectedFile ? `Ficheiro: ${selectedFile.name}` : ''));
 
       if (selectedFile) {
         await chatService.uploadFile(selectedFile, selectedGroup.id, msg.id);
@@ -150,11 +196,11 @@ export const Chat = () => {
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
 
-      setMessageInput('');
-
       // Hide typing indicator
-      await sendTypingIndicator(supabase, selectedGroup.id, currentUser?.id || '', false);
+      await sendTypingIndicator(supabase, selectedGroup.id, currentUser.id, false);
     } catch (error) {
+      // Rollback optimistic update
+      setMessages(prev => prev.filter(m => m.id !== tempId));
       setStatus({ type: 'error', message: `Erro ao enviar: ${error instanceof Error ? error.message : String(error)}` });
     } finally {
       setIsUploading(false);
@@ -224,7 +270,7 @@ export const Chat = () => {
               className={`w-full px-4 py-3 text-left border-b border-gray-100 hover:bg-gray-50 transition ${selectedGroup?.id === group.id ? 'bg-blue-50' : ''
                 }`}
             >
-              <p className="font-medium text-gray-800 truncate">{group.name}</p>
+              <p className="font-medium text-gray-800 truncate">{getGroupName(group)}</p>
               <p className="text-xs text-gray-500">
                 {group.type === 'DIRECT' ? 'Direct message' : group.type}
               </p>
@@ -240,10 +286,14 @@ export const Chat = () => {
             {/* Header */}
             <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
               <div>
-                <h3 className="text-lg font-bold text-gray-800">{selectedGroup.name}</h3>
+                <h3 className="text-lg font-bold text-gray-800">{getGroupName(selectedGroup)}</h3>
                 <p className="text-sm text-gray-500">{selectedGroup.description}</p>
               </div>
-              <button className="p-2 hover:bg-gray-100 rounded-lg transition" aria-label="Configurações da conversa">
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+                aria-label="Configurações da conversa"
+              >
                 <Settings size={20} className="text-gray-600" />
               </button>
             </div>
@@ -268,10 +318,10 @@ export const Chat = () => {
                   return (
                     <div
                       key={msg.id}
-                      className={`flex ${msg.sender_id === currentUser?.id ? 'justify-end' : 'justify-start'}`}
+                      className={`flex ${msg.sender_id === currentUser?.id ? 'justify-end' : 'justify-start'} ${msg.pending ? 'animate-pulse opacity-70' : ''}`}
                     >
                       <div
-                        className={`max-w-xs px-4 py-2 rounded-lg ${msg.sender_id === currentUser?.id
+                        className={`max-w-xs px-4 py-2 rounded-lg relative ${msg.sender_id === currentUser?.id
                             ? 'bg-blue-600 text-white'
                             : 'bg-gray-200 text-gray-800'
                           }`}
@@ -280,6 +330,9 @@ export const Chat = () => {
                           <p className="text-xs font-semibold mb-1">{sender?.name}</p>
                         )}
                         <p className="text-sm break-words">{msg.content}</p>
+                        {msg.pending && (
+                          <p className="text-[10px] text-white/70 italic text-right mt-1">Enviando...</p>
+                        )}
 
                         {/* Attachments */}
                         {msg.chat_file_attachments && msg.chat_file_attachments.length > 0 && (
@@ -324,6 +377,58 @@ export const Chat = () => {
               )}
             </div>
 
+            {/* Modal: Configurações do Chat */}
+            {showSettings && selectedGroup && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+                <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                  <div className="bg-gray-50 p-6 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-gray-800">Definições da Conversa</h3>
+                    <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-gray-600 p-1">
+                      <X size={24} />
+                    </button>
+                  </div>
+                  <div className="p-6 space-y-6">
+                    <div className="space-y-4">
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Informações</h4>
+                      <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <p className="text-sm text-blue-800 font-medium">Nome do Grupo: <span className="font-bold">{selectedGroup.name}</span></p>
+                        <p className="text-xs text-blue-600 mt-1">Este identificador é utilizado pelo sistema para sincronização em tempo real.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Participantes</h4>
+                      <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                        {selectedGroup.participants?.map((pId: string) => {
+                          const user = allUsers.find(u => u.id === pId);
+                          return (
+                            <div key={pId} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg transition">
+                              <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold">
+                                {user?.name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{user?.name} {pId === currentUser?.id && '(Você)'}</p>
+                                <p className="text-[10px] text-gray-500 uppercase">{user?.role}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-gray-100">
+                      <button
+                        onClick={() => setShowSettings(false)}
+                        className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg shadow-gray-200"
+                      >
+                        Fechar Definições
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Message Input */}
             <div className="border-t border-gray-200 p-4 bg-gray-50">
               <div className="flex gap-2">
@@ -361,7 +466,7 @@ export const Chat = () => {
                     onKeyPress={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        handleSendMessage();
+                        handleSendMessage(e);
                       }
                     }}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"

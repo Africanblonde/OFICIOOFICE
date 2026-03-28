@@ -138,7 +138,7 @@ export const chatService = {
         chat_group_members(*)
       `)
       .eq('id', groupId)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     return data;
@@ -189,9 +189,9 @@ export const chatService = {
       .select('*')
       .eq('name', groupName)
       .eq('type', 'DIRECT')
-      .single();
+      .maybeSingle();
 
-    if (searchError && searchError.code !== 'PGRST116') throw searchError;
+    if (searchError) throw searchError;
 
     if (existing) return existing;
 

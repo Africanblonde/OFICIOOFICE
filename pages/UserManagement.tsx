@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Role } from '../types';
+import { Role, LocationType } from '../types';
 import createUserWithEdge, { CreateUserPayload } from '../services/userService';
 import { LOCATIONS } from '../constants';
 
@@ -74,7 +74,7 @@ const UserManagement: React.FC = () => {
           <label htmlFor="um-location" className="block text-sm font-medium">Local</label>
           <select id="um-location" value={locationId} onChange={e => setLocationId(e.target.value)} className="mt-1 block w-full border rounded p-2">
             <option value="">-- Selecionar --</option>
-            {LOCATIONS.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            {LOCATIONS.filter(l => l.type !== LocationType.CENTRAL).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
         <div>

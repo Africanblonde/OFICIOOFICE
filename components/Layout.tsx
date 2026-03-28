@@ -48,7 +48,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
     lastUpdated,
     notification,
     isAdminOrGM,
-    hasPermission
+    hasPermission,
+    unreadChatCount
   } = useLogistics();
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -188,12 +189,19 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
 
           <button
             onClick={() => handleTabClick('chat')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${activeTab === 'chat' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${activeTab === 'chat' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'}`}
             aria-label="Abrir chat de equipe"
             title="Chat de Equipe"
           >
-            <MessageCircle size={20} />
-            <span className="font-medium text-sm">Chat</span>
+            <div className="flex items-center gap-3">
+              <MessageCircle size={20} />
+              <span className="font-medium text-sm">Chat</span>
+            </div>
+            {unreadChatCount > 0 && activeTab !== 'chat' && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm animate-pulse">
+                {unreadChatCount}
+              </span>
+            )}
           </button>
 
           {hasPermission('VIEW_REQUISITIONS') && (

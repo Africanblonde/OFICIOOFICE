@@ -679,7 +679,7 @@ export const POS = () => {
                                 onClick={() => { setHistoryLocationFilter('ALL'); setHistoryPage(1); }}
                                 className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${historyLocationFilter === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
                             >Todos</button>
-                            {locations.map(loc => (
+                            {locations.filter(loc => loc.type !== 'CENTRAL').map(loc => (
                                 <button key={loc.id}
                                     onClick={() => { setHistoryLocationFilter(loc.id); setHistoryPage(1); }}
                                     className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${historyLocationFilter === loc.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
@@ -805,7 +805,7 @@ export const POS = () => {
                             onClick={() => setHistoryLocationFilter('ALL')}
                             className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${historyLocationFilter === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
                         >Todas</button>
-                        {locations.map(loc => (
+                        {locations.filter(loc => loc.type !== 'CENTRAL').map(loc => (
                             <button
                                 key={loc.id}
                                 onClick={() => setHistoryLocationFilter(loc.id)}
@@ -897,7 +897,7 @@ export const POS = () => {
                                     <option value="">Selecione...</option>
                                     {locations.length > 0 && (
                                         <optgroup label="── Localizações Registradas">
-                                            {locations.map(loc => (
+                                            {locations.filter(loc => loc.type !== 'CENTRAL').map(loc => (
                                                 <option key={loc.id} value={loc.id}>{loc.name} ({loc.type})</option>
                                             ))}
                                         </optgroup>

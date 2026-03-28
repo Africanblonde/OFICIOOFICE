@@ -22,7 +22,13 @@ export function formatFlexibleDate(
   }
   // Case 2: value is a string (ISO date, timestamp string, etc.)
   else if (typeof value === 'string' && value.trim()) {
-    dateObj = new Date(value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      // Interpret date-only as local date (avoid timezone shift UTC->local)
+      const [year, month, day] = value.split('-').map(Number);
+      dateObj = new Date(year, month - 1, day);
+    } else {
+      dateObj = new Date(value);
+    }
   }
   // Case 3: value is a number (Unix timestamp in ms or seconds)
   else if (typeof value === 'number') {
@@ -57,6 +63,7 @@ export function formatFlexibleDate(
       });
     } else if (time) {
       return dateObj.toLocaleString('pt-MZ', {
+        timeZone: 'Africa/Maputo',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -65,7 +72,7 @@ export function formatFlexibleDate(
         second: '2-digit',
       });
     } else {
-      return dateObj.toLocaleString('pt-MZ');
+      return dateObj.toLocaleString('pt-MZ', { timeZone: 'Africa/Maputo' });
     }
   } catch {
     return fallback;

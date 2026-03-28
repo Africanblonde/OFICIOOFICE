@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useLogistics } from '../context/useLogistics';
-import { Role, User, AttendanceStatus, DailyPerformance, FichaIndividual } from '../types';
+import { Role, User, AttendanceStatus, DailyPerformance, FichaIndividual, LocationType } from '../types';
 import { formatFlexibleDate } from '../utils/dateFormatter';
 import {
     UserPlus, Users, Briefcase, MapPin, Search, X,
@@ -859,7 +859,7 @@ export const HumanResources = () => {
                                 {locations.filter((loc, index, self) =>
                                     index === self.findIndex((l) => (
                                         l.id === loc.id
-                                    ))
+                                    )) && loc.type !== LocationType.CENTRAL
                                 ).map(loc => (
                                     <option key={loc.id} value={loc.id}>{loc.name}</option>
                                 ))}

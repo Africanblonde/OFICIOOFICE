@@ -459,6 +459,18 @@ export type RolePermissions = Record<Role, AppPermission[]>;
 export type FichaTipo = 'combustivel' | 'oleo' | 'pecas' | 'materiais' | 'ferramentas';
 export type RegistoEstado = 'pendente' | 'confirmado' | 'trancado';
 
+export interface FichaReturn {
+  id: string;
+  ficha_id: string;
+  quantidade: number;
+  unidade: string;
+  data: string;
+  usuario_registou: string;
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FichaIndividual {
   id: string;
   codigo: string;
@@ -479,6 +491,7 @@ export interface FichaIndividual {
   delivery_type?: string;
   inventory_reduced?: boolean;
   estado: RegistoEstado;
+  retorno?: FichaReturn[];
   created_at: string;
   updated_at: string;
 }

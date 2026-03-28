@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useLogistics } from '../context/useLogistics';
-import { FichaTipo, RegistoEstado, User, Item } from '../types';
+import { FichaTipo, RegistoEstado, User, Item, FichaIndividual } from '../types';
 import { formatFlexibleDate } from '../utils/dateFormatter';
 import {
   User as UserIcon,
@@ -22,16 +22,54 @@ import {
   Printer
 } from 'lucide-react';
 
+export const mapItemToFichaTipo = (item: Item): FichaTipo => {
+  const category = (item.category || '').toLowerCase();
+  const name = (item.name || '').toLowerCase();
+
+  if (category.includes('combust') || name.includes('combust') || name.includes('gasolina') || name.includes('diesel')) {
+    return 'combustivel';
+  }
+  if (category.includes('oleo') || name.includes('oleo')) {
+    return 'oleo';
+  }
+  if (category.includes('ferramenta') || name.includes('ferramenta')) {
+    return 'ferramentas';
+  }
+  if (category.includes('peca') || name.includes('peca')) {
+    return 'pecas';
+  }
+  if (category.includes('epi') || name.includes('material') || name.includes('insumo')) {
+    return 'materiais';
+  }
+
+  return 'materiais';
+};
+
 export const FichasIndividuais = () => {
   const {
     fichasIndividuais, currentUser, allUsers, isAdminOrGM, items, inventory,
-    createFicha, confirmFicha, lockFicha, deleteFicha, locations
+    createFicha, returnFromFicha, confirmFicha, lockFicha, deleteFicha, locations
   } = useLogistics();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filterTipo, setFilterTipo] = useState<FichaTipo | 'todos'>('todos');
+
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [selectedReturnFicha, setSelectedReturnFicha] = useState<FichaIndividual | null>(null);
+  const [returnQuantity, setReturnQuantity] = useState<number>(0);
+  const [returnObservacoes, setReturnObservacoes] = useState<string>('');
+  const [isLoadingData, setIsLoadingData] = useState(false);
+
+  // Carrega dados quando seleciona uma pessoa
+  React.useEffect(() => {
+    if (selectedPersonId && fichasIndividuais.length === 0) {
+      setIsLoadingData(true);
+      const timeout = setTimeout(() => setIsLoadingData(false), 1500);
+      return () => clearTimeout(timeout);
+    }
+  }, [selectedPersonId, fichasIndividuais.length]);
 
   // Filtered users for the list
   const filteredUsers = useMemo(() => {
@@ -170,7 +208,11 @@ export const FichasIndividuais = () => {
                       <Plus className="w-4 h-4" />
                       Nova Entrega
                     </button>
-                    <button className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 shadow-sm transition-all" title="Imprimir Ficha">
+                    <button
+                      onClick={() => window.print()}
+                      className="p-2 border border-blue-200 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 shadow-sm transition-all"
+                      title="Imprimir Ficha (PDF)"
+                    >
                       <Printer className="w-5 h-5" />
                     </button>
                   </div>
@@ -196,13 +238,18 @@ export const FichasIndividuais = () => {
 
                 {/* History List */}
                 <div className="flex-1 overflow-y-auto">
-                  {personDeliveries.length === 0 ? (
+                  {isLoadingData ? (
+                    <div className="p-20 text-center">
+                      <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4"></div>
+                      <p className="text-gray-500">Carregando registos...</p>
+                    </div>
+                  ) : personDeliveries.length === 0 ? (
                     <div className="p-20 text-center">
                       <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
                         <History className="w-8 h-8" />
                       </div>
-                      <h3 className="text-lg font-medium text-gray-900">Sem histórico</h3>
-                      <p className="text-gray-500 text-sm max-w-xs mx-auto mt-1">Este funcionário ainda não recebeu nenhuma entrega registrada.</p>
+                      <h3 className="text-lg font-medium text-gray-900">Sem histórico de entrega</h3>
+                      <p className="text-gray-500 text-sm max-w-xs mx-auto mt-1">Este funcionário ainda não recebeu nenhuma entrega registada. Use o botão "Nova Entrega" para registar.</p>
                     </div>
                   ) : (
                     <div className="divide-y divide-gray-50">
@@ -230,13 +277,13 @@ export const FichasIndividuais = () => {
                                 <div className="h-4 w-px bg-gray-200"></div>
                                 <div className="flex flex-col">
                                   <span className="text-[10px] text-gray-400 uppercase font-bold tracking-widest">Entrega</span>
-                                  <span className="text-sm text-gray-600 font-medium">{formatFlexibleDate(delivery.data)}</span>
+                                  <span className="text-sm text-gray-600 font-medium">{formatFlexibleDate(delivery.created_at || delivery.data)}</span>
                                 </div>
                               </div>
                             </div>
-                            <div className="text-right">
+                            <div className="text-right flex flex-col items-end justify-between h-full">
                               {delivery.stock_antes !== undefined && (
-                                <div className="text-[10px] text-gray-400 flex flex-col items-end">
+                                <div className="text-[10px] text-gray-400 flex flex-col items-end mb-2">
                                   <span className="uppercase font-bold tracking-widest">Saldo Stock</span>
                                   <div className="flex items-center gap-1 mt-0.5 font-medium">
                                     <span>{delivery.stock_antes}</span>
@@ -244,6 +291,22 @@ export const FichasIndividuais = () => {
                                     <span className="text-emerald-600">{delivery.stock_depois}</span>
                                   </div>
                                 </div>
+                              )}
+                              
+                              {(delivery.stock_depois ?? 0) > (delivery.stock_antes ?? 0) ? (
+                                <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-1 rounded-md border border-orange-100 inline-block mt-auto">Retorno</span>
+                              ) : (
+                                <button
+                                  className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 hover:border-emerald-600 px-3 py-1.5 rounded-lg transition-all shadow-sm mt-auto"
+                                  onClick={() => {
+                                    setSelectedReturnFicha(delivery);
+                                    setReturnQuantity(Math.max(0.01, delivery.quantidade * 0.1));
+                                    setReturnObservacoes('');
+                                    setIsReturnModalOpen(true);
+                                  }}
+                                >
+                                  Retornar ao Stock
+                                </button>
                               )}
                             </div>
                           </div>
@@ -280,7 +343,121 @@ export const FichasIndividuais = () => {
           </div>
         </div>
 
-        {/* Modal for new registration */}
+      {/* Printable Area (Hidden by default, visible only in print) */}
+      <div className="hidden print:block fixed inset-0 bg-white z-[9999] p-8 overflow-y-auto">
+        <style dangerouslySetInnerHTML={{
+          __html: `
+          @media print {
+            body * { visibility: hidden; }
+            .print-area, .print-area * { visibility: visible; }
+            .print-area { position: absolute; left: 0; top: 0; width: 100%; }
+            @page { margin: 1.5cm; }
+          }
+        `}} />
+        <div className="print-area font-sans text-gray-900">
+          {/* Institution Header */}
+          <div className="flex justify-between items-center border-b-2 border-emerald-600 pb-4 mb-8">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center text-3xl">🌲</div>
+              <div>
+                <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tighter">ULINKA UNI</h1>
+                <p className="text-[10px] text-gray-500 font-bold tracking-[0.2em]">SISTEMA DE GESTÃO FLORESTAL & LOGÍSTICA</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-bold">FICHA INDIVIDUAL DE MOVIMENTAÇÃO</p>
+              <p className="text-[10px] text-gray-500">Documento gerado em {new Date().toLocaleDateString('pt-PT')} às {new Date().toLocaleTimeString('pt-PT')}</p>
+            </div>
+          </div>
+
+          {/* User Info Card */}
+          {selectedPerson && (
+            <div className="grid grid-cols-3 gap-6 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-200">
+              <div className="col-span-1">
+                <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1">Pessoa / Beneficiário</p>
+                <p className="text-lg font-bold text-gray-900">{selectedPerson.name}</p>
+                <p className="text-xs text-gray-600">{selectedPerson.jobTitle || 'Sem cargo'}</p>
+              </div>
+              <div className="col-span-1">
+                <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1">Localização Principal</p>
+                <p className="text-sm font-bold text-gray-800">
+                  {selectedPerson.locationId ? locations.find(l => l.id === selectedPerson.locationId)?.name : 'Não vinculada'}
+                </p>
+              </div>
+              <div className="col-span-1 text-right">
+                <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mb-1">Total de Registos</p>
+                <p className="text-xl font-black text-emerald-600">{personDeliveries.length}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Table */}
+          <table className="w-full text-left border-collapse mb-8">
+            <thead>
+              <tr className="bg-gray-100 uppercase text-[10px] font-bold tracking-widest text-gray-600">
+                <th className="p-3 border-b border-gray-200">Data</th>
+                <th className="p-3 border-b border-gray-200">Código</th>
+                <th className="p-3 border-b border-gray-200">Tipo</th>
+                <th className="p-3 border-b border-gray-200">Produto / Material</th>
+                <th className="p-3 border-b border-gray-200 text-right">Qtd</th>
+                <th className="p-3 border-b border-gray-200">Unid</th>
+                <th className="p-3 border-b border-gray-200">Saldo Stock</th>
+                <th className="p-3 border-b border-gray-200">Retorno</th>
+              </tr>
+            </thead>
+            <tbody className="text-sm">
+              {personDeliveries.map(delivery => (
+                <tr key={delivery.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                  <td className="p-3 whitespace-nowrap">{formatFlexibleDate(delivery.data)}</td>
+                  <td className="p-3 font-mono text-xs text-gray-500">{delivery.codigo}</td>
+                  <td className="p-3"><span className="text-[9px] font-bold uppercase">{delivery.tipo}</span></td>
+                  <td className="p-3 font-bold">{delivery.produto}</td>
+                  <td className="p-3 text-right font-black text-emerald-600">{delivery.quantidade}</td>
+                  <td className="p-3 text-xs text-gray-500">{delivery.unidade}</td>
+                  <td className="p-3 text-xs text-gray-400">
+                    {delivery.stock_antes} → {delivery.stock_depois}
+                  </td>
+                  <td className="p-3">
+                    {delivery.delivery_type === 'RETORNO' ? (
+                      <span className="text-xs font-semibold text-orange-600">Retorno</span>
+                    ) : (
+                      <button
+                        className="text-xs text-emerald-600 hover:text-emerald-900"
+                        onClick={() => {
+                          setSelectedReturnFicha(delivery);
+                          setReturnQuantity(Math.max(0.01, delivery.quantidade * 0.1));
+                          setReturnObservacoes('');
+                          setIsReturnModalOpen(true);
+                        }}
+                      >
+                        Retornar
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Footer / Signatures */}
+          <div className="mt-20 grid grid-cols-2 gap-20">
+            <div className="text-center pt-4 border-t border-gray-300">
+              <p className="text-xs font-bold text-gray-900 uppercase">O Funcionário</p>
+              <p className="text-[10px] text-gray-400 mt-1">Assinatura / Data</p>
+            </div>
+            <div className="text-center pt-4 border-t border-gray-300">
+              <p className="text-xs font-bold text-gray-900 uppercase">A Administração / Logística</p>
+              <p className="text-[10px] text-gray-400 mt-1">Assinatura / Carimbo</p>
+            </div>
+          </div>
+
+          <div className="mt-12 pt-8 border-t border-gray-100 text-center">
+            <p className="text-[9px] text-gray-400 uppercase tracking-widest">Ulinka Uni - Eficiência e Sustentabilidade Florestal</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Modal for new registration */}
         {isModalOpen && (
           <FichaDeliveryModal
             initialPersonId={selectedPersonId || undefined}
@@ -293,6 +470,24 @@ export const FichasIndividuais = () => {
             onSave={async (data) => {
               await createFicha(data);
               setIsModalOpen(false);
+            }}
+          />
+        )}
+
+        {isReturnModalOpen && selectedReturnFicha && (
+          <ReturnToStockModal
+            ficha={selectedReturnFicha}
+            maxQuantity={selectedReturnFicha.quantidade}
+            quantity={returnQuantity}
+            onQuantityChange={setReturnQuantity}
+            observacoes={returnObservacoes}
+            onObservacoesChange={setReturnObservacoes}
+            locations={locations}
+            currentUserLocationId={currentUser?.locationId}
+            onClose={() => setIsReturnModalOpen(false)}
+            onConfirm={async (selectedLocationId) => {
+              await returnFromFicha(selectedReturnFicha.id, returnQuantity, returnObservacoes, selectedLocationId);
+              setIsReturnModalOpen(false);
             }}
           />
         )}
@@ -356,10 +551,22 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
     return itemInventory?.quantity || 0;
   }, [formData.produto_id, stockLocationId, inventory]);
 
+  const selectedProduct = useMemo(() => {
+    return allItems.find(item => item.id === formData.produto_id);
+  }, [allItems, formData.produto_id]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.entidade_id || !formData.produto) {
       alert("Por favor, selecione o funcionário e o produto.");
+      return;
+    }
+    if (formData.quantidade <= 0) {
+      alert('Quantidade deve ser maior que zero');
+      return;
+    }
+    if (formData.quantidade > selectedItemStock) {
+      alert('Quantidade maior que o stock disponível');
       return;
     }
     onSave(formData);
@@ -370,7 +577,8 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
       ...formData,
       produto_id: item.id,
       produto: item.name,
-      unidade: item.unit || 'Unidade'
+      unidade: item.unit || 'Unidade',
+      tipo: mapItemToFichaTipo(item)
     });
     setSearchProduct(item.name);
     setShowProductList(false);
@@ -451,6 +659,28 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Produto meta */}
+            <div className="col-span-1 md:col-span-2 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Categoria do Produto</label>
+                <input
+                  type="text"
+                  value={selectedProduct?.category || 'Não selecionado'}
+                  readOnly
+                  className="w-full border border-gray-200 rounded-xl p-3 text-sm bg-gray-100 text-gray-600 cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Unidade do Produto</label>
+                <input
+                  type="text"
+                  value={formData.unidade}
+                  readOnly
+                  className="w-full border border-gray-200 rounded-xl p-3 text-sm bg-gray-100 text-gray-600 cursor-not-allowed"
+                />
               </div>
             </div>
 
@@ -543,6 +773,87 @@ const FichaDeliveryModal: React.FC<FichaDeliveryModalProps> = ({ initialPersonId
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+};
+
+interface ReturnToStockModalProps {
+  ficha: FichaIndividual;
+  maxQuantity: number;
+  quantity: number;
+  onQuantityChange: (q: number) => void;
+  observacoes: string;
+  onObservacoesChange: (obs: string) => void;
+  onClose: () => void;
+  onConfirm: (locationId: string) => Promise<void>;
+  locations: any[];
+  currentUserLocationId?: string | null;
+}
+
+const ReturnToStockModal: React.FC<ReturnToStockModalProps> = ({ ficha, maxQuantity, quantity, onQuantityChange, observacoes, onObservacoesChange, onClose, onConfirm, locations, currentUserLocationId }) => {
+  const [selectedLocation, setSelectedLocation] = React.useState<string>(currentUserLocationId || '');
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-gray-800">Retorno ao Stock</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+
+        <p className="text-sm text-gray-600 mb-3">Ficha: <strong>{ficha.codigo}</strong> — Produto: <strong>{ficha.produto}</strong></p>
+        <p className="text-sm text-gray-500 mb-4">Quantidade entregue: {ficha.quantidade} {ficha.unidade}</p>
+
+        <div className="grid gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">Quantidade a retornar</label>
+            <input
+              type="number"
+              min="0.01"
+              max={maxQuantity}
+              step="0.01"
+              value={quantity}
+              onChange={(e) => onQuantityChange(parseFloat(e.target.value))}
+              className="w-full border rounded-lg p-2.5 bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+            />
+            <p className="text-[10px] text-gray-500 mt-1">Máximo: {maxQuantity} {ficha.unidade}</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">Armazém de Destino</label>
+            <select
+              value={selectedLocation}
+              onChange={(e) => setSelectedLocation(e.target.value)}
+              className="w-full border rounded-lg p-2.5 bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 outline-none"
+            >
+              <option value="">Selecione o armazém...</option>
+              {locations.filter((loc: any) => loc.type !== 'CENTRAL').map((loc: any) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">Observações</label>
+            <textarea
+              value={observacoes}
+              onChange={(e) => onObservacoesChange(e.target.value)}
+              className="w-full border rounded-lg p-2.5 bg-white text-gray-900 focus:ring-2 focus:ring-emerald-500 outline-none min-h-[80px]"
+              placeholder="Motivo do retorno, condições, etc."
+            />
+          </div>
+
+          <div className="flex gap-2 justify-end pt-4 border-t border-gray-100">
+            <button onClick={onClose} className="px-4 py-2 border rounded text-gray-600">Cancelar</button>
+            <button
+              onClick={() => onConfirm(selectedLocation)}
+              className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={quantity <= 0 || quantity > maxQuantity || !selectedLocation}
+            >
+              Confirmar Retorno
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
